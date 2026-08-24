@@ -59,7 +59,12 @@ rm -f /tmp/hopewell-app.tar.gz
 # can never wipe the queue.
 mkdir -p "/home/\$SITE_USER/hopewell-data/media"
 
-if [ ! -d "\$APP_DIR/venv" ]; then
+# Check for a WORKING interpreter, not merely a directory. A venv whose
+# creation failed part-way (python3-venv missing, disk full) leaves the folder
+# behind, and a directory-only test then skips rebuilding it forever — every
+# later deploy fails on a missing pip instead of fixing itself.
+if [ ! -x "\$APP_DIR/venv/bin/pip" ]; then
+  rm -rf "\$APP_DIR/venv"
   python3 -m venv "\$APP_DIR/venv"
 fi
 "\$APP_DIR/venv/bin/pip" -q install --upgrade pip

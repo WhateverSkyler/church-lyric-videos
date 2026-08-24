@@ -56,23 +56,38 @@ store = Store(DB_PATH)
 
 def worker_token() -> str:
     token = os.environ.get("HOPEWELL_WORKER_TOKEN", "").strip()
-    if not token:
-        # Generated once and kept beside the database, so a fresh install
-        # works without hand-editing anything, and the value survives restarts.
-        path = DATA_DIR / "worker-token.txt"
-        if path.is_file():
-            token = path.read_text().strip()
-        else:
-            token = secrets.token_urlsafe(32)
-            path.write_text(token)
-            path.chmod(0o600)
-    return token
+    if token:
+        return token
+
+    # Generated once and kept beside the database, so a fresh install works
+    # without hand-editing anything and the value survives restarts.
+    path = DATA_DIR / "worker-token.txt"
+    if path.is_file():
+        return path.read_text().strip()
+
+    # Created with O_EXCL so that when gunicorn's workers race on the very
+    # first request, exactly one wins and the loser reads what the winner
+    # wrote. A plain write would leave the two processes disagreeing about the
+    # token, and roughly half of the church PC's requests would be rejected.
+    candidate = secrets.token_urlsafe(32)
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(candidate)
+        return candidate
+    except FileExistsError:
+        return path.read_text().strip()
 
 
 def require_worker() -> None:
+    # worker_token() is resolved FIRST, not inside the condition. Written the
+    # other way round, `not supplied` short-circuits on an unauthenticated
+    # request and the token is never generated — leaving no way to read the
+    # token off a fresh install without already possessing it.
+    expected = worker_token()
     header = request.headers.get("Authorization", "")
     supplied = header[7:].strip() if header.lower().startswith("bearer ") else ""
-    if not supplied or not secrets.compare_digest(supplied, worker_token()):
+    if not supplied or not secrets.compare_digest(supplied, expected):
         abort(401)
 
 
