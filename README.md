@@ -88,31 +88,38 @@ engine/
   typeset.py      the same line as individually animatable word sprites
   textanim.py     how type enters, sits and leaves
   anim.py         easing, transforms, sprite compositing
+  splash.py       the branded open and close, and the logo's travel between
   background.py   procedural backdrops, for when no footage is available
   footage.py      Pexels sourcing, exposure grading, seamless looping
   ocr.py          Phase 1 — lyrics and timing off a source video
   align.py        Phase 2 — demucs + Whisper + chroma DTW
+  transpose.py    key changes that provably do not move the timing
   compositor.py   the per-frame renderer
   render.py       encoder selection, logo placement, stills
   lyrics.py       the data model and the .lyr proofreading format
   pipeline.py     prepare() / render(), the two halves of a job
+  tools.py        finds ffmpeg/yt-dlp without depending on PATH
 dashboard/        Flask queue + web UI (runs on the VPS)
+  validate.py     catches the mistakes people actually make, by name
 worker/           the polling render worker (runs on the church PC)
+  guard.py        keeps rendering away from the livestream
 deploy/           deployment scripts
+scripts/
+  verify_timing.py  proves cues match the source, in milliseconds
 ```
 
 ## Setup
 
 **Dashboard (VPS):**
 ```bash
-./deploy/deploy-dashboard.sh lyrics.tristanaddi.com
+./deploy/deploy-dashboard.sh hopewell.tristanaddi.com
 ```
 Then set the shared password and proxy config it prints at the end.
 
 **Worker (church PC),** from an administrator PowerShell:
 ```powershell
 powershell -ExecutionPolicy Bypass -File worker\setup-windows.ps1 `
-    -Url "https://lyrics.tristanaddi.com" -Token "<worker token>"
+    -Url "https://hopewell.tristanaddi.com" -Token "<worker token>"
 ```
 Installs Python, FFmpeg, yt-dlp, Tesseract and CUDA PyTorch, then registers a
 scheduled task that starts at boot and restarts itself on failure.
@@ -137,6 +144,39 @@ What the review step edits. Deliberately plain, so it can be fixed quickly:
 
 An indented continuation row becomes a literal line break on screen, so
 whoever is proofreading controls where lines split without touching timings.
+
+## Timing
+
+The one thing that cannot be wrong. A singer watching for their line mid-service
+cannot recover from a late cue, so it is measured rather than asserted:
+
+```bash
+python scripts/verify_timing.py SOURCE.mp4 lyrics.lyr OUTPUT.mp4
+```
+
+Current measurement on the reference song:
+
+| | |
+|---|---|
+| extraction (`.lyr` vs source) | 1.3 ms mean, 100% within one source frame |
+| render (output vs `.lyr`) | 33.3 ms, constant — a fixed one-frame offset |
+| **end to end** | **~35 ms**, inside the ~60 ms threshold of perception |
+
+The residual frame is *early*, deliberately. Early is harmless; late is what
+makes someone come in behind the music.
+
+## Not during a service
+
+The render machine is also the livestream machine, so `worker/guard.py` holds
+three independent protections, all failing closed:
+
+- **the clock** — no automatic work Sunday 10:40–12:30 or Wednesday 18:30–20:30
+- **the process** — OBS running means a stream may be live whatever the clock says
+- **the encoder** — while OBS is up, software encoding only, at reduced priority,
+  so a render can never take one of the card's finite NVENC sessions
+
+A person can override the clock (`--ignore-services`) — songs often arrive the
+morning of. Nobody can override the stream protections.
 
 ## Notes
 
