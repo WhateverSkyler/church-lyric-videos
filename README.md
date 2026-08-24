@@ -16,7 +16,7 @@ like they came from six different churches.
     any day)                                      │  the church PC polls
                                                   ▼  outbound over https
                                         Worker on the church PC
-                                        RTX 3060 Ti · OCR / Whisper / render
+                                        RTX 3060 · OCR / Whisper / render
                                                   │
                                     ┌─────────────┴─────────────┐
                                     ▼                           ▼
@@ -121,8 +121,11 @@ Then set the shared password and proxy config it prints at the end.
 powershell -ExecutionPolicy Bypass -File worker\setup-windows.ps1 `
     -Url "https://hopewell.tristanaddi.com" -Token "<worker token>"
 ```
-Installs Python, FFmpeg, yt-dlp, Tesseract and CUDA PyTorch, then registers a
-scheduled task that starts at boot and restarts itself on failure.
+Finds the ffmpeg and yt-dlp already on that machine and records their paths
+rather than changing PATH, installs a real Python if only the Windows Store
+stub is present, adds CUDA PyTorch, Whisper, Demucs and EasyOCR, then registers
+a task that runs as SYSTEM at boot — the machine has no auto-login, so a task
+tied to the signed-in session would not start after a restart.
 
 **Development (Mac/Linux):**
 ```bash
