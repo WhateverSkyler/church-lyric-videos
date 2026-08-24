@@ -83,8 +83,12 @@ class Dashboard:
             # only goes stale after 45 minutes of total silence.
             pass
 
-    def upload(self, job_id: str, path: Path):
-        """Multipart upload, hand-rolled to avoid a requests dependency."""
+    def upload(self, job_id: str, path: Path, kind: str = "upload"):
+        """Multipart upload, hand-rolled to avoid a requests dependency.
+
+        `kind` is 'upload' for the finished video or 'audio' for the track the
+        browser needs in order to tap-time.
+        """
         boundary = f"----hopewell{int(time.time() * 1000):x}"
         name = path.name.encode("utf-8")
         head = (f"--{boundary}\r\n"
@@ -97,7 +101,7 @@ class Dashboard:
         with path.open("rb") as fh:
             body = _ChainedStream([head, fh, tail], len(head) + size + len(tail))
             req = urllib.request.Request(
-                f"{self.base}/api/job/{job_id}/upload", data=body, method="POST",
+                f"{self.base}/api/job/{job_id}/{kind}", data=body, method="POST",
                 headers={
                     "Authorization": f"Bearer {self.token}",
                     "Content-Type": f"multipart/form-data; boundary={boundary}",
@@ -224,6 +228,15 @@ class Worker:
 
         track = LyricTrack.load(Path(job.lyrics_path))
         log(f"  recovered {len(track)} lines -> awaiting review")
+
+        # Send the track up too, so the review screen can offer tap-timing.
+        # Audio is a few MB against the couple of hundred a finished video
+        # costs, so it is worth doing for every job rather than on demand.
+        try:
+            self.api.upload(job.id, Path(job.audio_path), kind="audio")
+        except Exception as exc:
+            log(f"  note: could not upload the track for tap-timing ({exc})")
+
         self.api.update(
             job.id,
             stage="review",

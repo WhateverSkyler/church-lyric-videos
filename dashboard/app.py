@@ -35,7 +35,10 @@ sys.path.insert(0, str(ROOT))
 
 from dashboard.store import Store  # noqa: E402
 
-DATA_DIR = Path(os.environ.get("HOPEWELL_DATA", ROOT / "work" / "dashboard"))
+# Absolute, always. Flask's send_from_directory resolves a relative directory
+# against the app root (dashboard/), so a relative HOPEWELL_DATA uploads files
+# to one place and then 404s looking for them in another.
+DATA_DIR = Path(os.environ.get("HOPEWELL_DATA", ROOT / "work" / "dashboard")).resolve()
 MEDIA_DIR = DATA_DIR / "media"
 DB_PATH = DATA_DIR / "jobs.db"
 #: How long finished videos stay downloadable here before being pruned.
@@ -207,6 +210,35 @@ def download(job_id: str):
     return send_from_directory(MEDIA_DIR, job["output_name"], as_attachment=True)
 
 
+def audio_name(job_id: str) -> str:
+    return f"{job_id}-audio.m4a"
+
+
+@app.get("/job/<job_id>/audio")
+def job_audio(job_id: str):
+    """Serve the track so the browser can play it for tap-timing."""
+    path = MEDIA_DIR / audio_name(job_id)
+    if not path.is_file():
+        abort(404)
+    return send_from_directory(MEDIA_DIR, path.name, mimetype="audio/mp4")
+
+
+@app.get("/job/<job_id>/tap")
+def tap(job_id: str):
+    """Re-time a song by tapping along to it.
+
+    The fallback for when automatic timing has nothing to work from: a Phase 2
+    song with no original recording to borrow from, or an alignment that came
+    back with low confidence. Also the quickest fix when OCR read the words
+    correctly but the timings drifted.
+    """
+    job = store.get(job_id)
+    if not job:
+        abort(404)
+    has_audio = (MEDIA_DIR / audio_name(job_id)).is_file()
+    return render_template("tap.html", job=job, has_audio=has_audio)
+
+
 @app.get("/healthz")
 def healthz():
     return jsonify(ok=True, jobs=store.counts(), retention_days=RETENTION_DAYS)
@@ -268,6 +300,24 @@ def api_upload(job_id: str):
     # Opportunistic cleanup — no cron needed on the VPS for this.
     store.prune(RETENTION_DAYS, MEDIA_DIR)
     return jsonify(ok=True, name=name, bytes=dest.stat().st_size)
+
+
+@app.post("/api/job/<job_id>/audio")
+def api_upload_audio(job_id: str):
+    """The worker posts the track here so the browser can tap-time against it.
+
+    Audio only — a few MB per song rather than the couple of hundred a
+    finished video costs, so keeping it for every job is cheap.
+    """
+    require_worker()
+    if not store.get(job_id):
+        abort(404)
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        abort(400, "no file")
+    dest = MEDIA_DIR / audio_name(job_id)
+    upload.save(dest)
+    return jsonify(ok=True, bytes=dest.stat().st_size)
 
 
 @app.get("/api/themes")

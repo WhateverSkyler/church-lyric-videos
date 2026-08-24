@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Tap the timing{% endblock %}
+{% block body %}
+
+<p class="muted"><a href="{{ url_for('job_detail', job_id=job.id) }}">&larr; Back to {{ job.title or 'the song' }}</a></p>
+<h1>Tap the timing</h1>
+
+{% if not has_audio %}
+  <div class="err">
+    The track hasn't been uploaded for this song yet, so there's nothing to play.
+    That happens automatically while the song is being prepared — try again once
+    it reaches the checking stage.
+  </div>
+{% else %}
+
+<div class="card">
+  <p class="muted" style="margin-top:0">
+    Press <b>Play</b>, then tap <b>Space</b> (or the big button) at the moment each
+    line should appear. Get it wrong? <b>Backspace</b> undoes the last tap.
+    Nothing is saved until you press Save at the bottom.
+  </p>
+  <audio id="audio" src="{{ url_for('job_audio', job_id=job.id) }}" preload="auto"
+         controls style="width:100%"></audio>
+  <div class="row" style="margin-top:.8rem">
+    <button class="btn go" id="tapbtn" type="button" style="flex:1;padding:1.4rem">
+      Tap here on each line &nbsp;(Space)
+    </button>
+    <button class="btn alt" id="undo" type="button">Undo (Backspace)</button>
+    <button class="btn alt" id="reset" type="button">Start over</button>
+  </div>
+  <div class="bar"><i id="bar" style="width:0%"></i></div>
+  <p class="muted" id="status" style="margin:.5rem 0 0">Not started.</p>
+</div>
+
+<div class="card">
+  <div id="rows"></div>
+</div>
+
+<form method="post" action="{{ url_for('approve', job_id=job.id) }}" id="saveform">
+  <input type="hidden" name="lyrics" id="lyricsout">
+  <input type="hidden" name="title" value="{{ job.title }}">
+  <input type="hidden" name="theme" value="{{ job.theme }}">
+  <button class="btn go" type="submit" id="save" disabled>Save timing and make the video</button>
+  <a class="btn alt" href="{{ url_for('job_detail', job_id=job.id) }}">Cancel</a>
+</form>
+
+<script>
+(function(){
+  const RAW = {{ job.lyrics|tojson }};
+  const audio  = document.getElementById('audio');
+  const rowsEl = document.getElementById('rows');
+  const statusEl = document.getElementById('status');
+  const barEl  = document.getElementById('bar');
+  const saveBtn = document.getElementById('save');
+
+  // Keep only the words. Timings are exactly what we're rebuilding, and any
+  // header comments are carried through untouched.
+  const header = [];
+  const lines = [];
+  RAW.split('\n').forEach(function(raw){
+    if (raw.trim().startsWith('#')) { header.push(raw.trim()); return; }
+    const m = raw.match(/^\[\s*\d+:[\d.]+\s*->\s*\d+:[\d.]+\s*\]\s?(.*)$/);
+    if (m) { lines.push({text: m[1].replace(/\s+$/,''), start: null}); }
+    else if (raw.trim() && lines.length) {
+      // An indented continuation row belongs to the line above it.
+      lines[lines.length-1].text += '\n' + raw.trim();
+    }
+  });
+
+  let cursor = 0;
+
+  function fmt(t){
+    const m = Math.floor(t/60), s = t - m*60;
+    return String(m).padStart(2,'0') + ':' + s.toFixed(2).padStart(5,'0');
+  }
+
+  function draw(){
+    rowsEl.innerHTML = '';
+    lines.forEach(function(line, i){
+      const div = document.createElement('div');
+      div.style.cssText = 'padding:.45rem .5rem;border-bottom:1px solid var(--line);'
+        + 'display:flex;gap:.8rem;align-items:flex-start';
+      if (i === cursor) div.style.background = '#FDF6E6';
+      const ts = document.createElement('code');
+      ts.style.cssText = 'min-width:5.6rem;color:'
+        + (line.start === null ? 'var(--muted)' : 'var(--blue)');
+      ts.textContent = line.start === null ? '--:--.--' : fmt(line.start);
+      const tx = document.createElement('div');
+      tx.style.whiteSpace = 'pre-line';
+      tx.textContent = line.text;
+      if (line.start === null) tx.style.color = 'var(--muted)';
+      div.appendChild(ts); div.appendChild(tx);
+      rowsEl.appendChild(div);
+    });
+    const done = lines.filter(function(l){ return l.start !== null; }).length;
+    barEl.style.width = (100*done/Math.max(1,lines.length)) + '%';
+    statusEl.textContent = done + ' of ' + lines.length + ' lines timed'
+      + (done === lines.length ? ' — ready to save.' : '.');
+    saveBtn.disabled = done === 0;
+  }
+
+  function tap(){
+    if (cursor >= lines.length) return;
+    if (audio.paused) { audio.play(); }
+    lines[cursor].start = audio.currentTime;
+    cursor++;
+    // Scroll the newly-active row into view on a phone.
+    const active = rowsEl.children[cursor];
+    if (active && active.scrollIntoView) {
+      active.scrollIntoView({block:'nearest', behavior:'smooth'});
+    }
+    draw();
+  }
+
+  function undo(){
+    if (cursor === 0) return;
+    cursor--;
+    lines[cursor].start = null;
+    draw();
+  }
+
+  document.getElementById('tapbtn').addEventListener('click', tap);
+  document.getElementById('undo').addEventListener('click', undo);
+  document.getElementById('reset').addEventListener('click', function(){
+    lines.forEach(function(l){ l.start = null; });
+    cursor = 0; audio.pause(); audio.currentTime = 0; draw();
+  });
+
+  document.addEventListener('keydown', function(e){
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.code === 'Space')     { e.preventDefault(); tap(); }
+    if (e.code === 'Backspace') { e.preventDefault(); undo(); }
+  });
+
+  document.getElementById('saveform').addEventListener('submit', function(e){
+    const timed = lines.filter(function(l){ return l.start !== null; });
+    if (!timed.length) { e.preventDefault(); return; }
+    const out = header.slice();
+    if (out.length) out.push('');
+    timed.forEach(function(line, i){
+      // A line runs until the next one starts, minus a breath. The last line
+      // holds for a sensible default rather than to the end of the track.
+      const next = timed[i+1];
+      let end = next ? next.start - 0.12 : line.start + 4.0;
+      if (end <= line.start) end = line.start + 0.8;
+      const stamp = '[' + fmt(line.start) + ' -> ' + fmt(end) + '] ';
+      const rows = line.text.split('\n');
+      out.push(stamp + rows[0]);
+      for (let r = 1; r < rows.length; r++) {
+        out.push(' '.repeat(stamp.length) + rows[r]);
+      }
+    });
+    document.getElementById('lyricsout').value = out.join('\n') + '\n';
+  });
+
+  draw();
+})();
+</script>
+{% endif %}
+{% endblock %}

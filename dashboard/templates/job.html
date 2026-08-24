@@ -74,7 +74,10 @@
     <label for="title2">Song name</label>
     <input type="text" id="title2" name="title" value="{{ job.title }}">
 
-    <label for="lyrics">Words and timing</label>
+    <div class="row" style="margin:.9rem 0 .3rem">
+      <label for="lyrics" style="margin:0" class="grow">Words and timing</label>
+      <a class="btn alt" href="{{ url_for('tap', job_id=job.id) }}">Re-time by tapping</a>
+    </div>
     <textarea id="lyrics" name="lyrics" spellcheck="true">{{ job.lyrics }}</textarea>
     <div class="hint">
       Each line starts with when it appears and when it disappears, like
