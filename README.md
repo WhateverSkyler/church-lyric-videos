@@ -112,14 +112,14 @@ scripts/
 
 **Dashboard (VPS):**
 ```bash
-./deploy/deploy-dashboard.sh hopewell.tristanaddi.com
+./deploy/deploy-dashboard.sh lyrics.yourdomain.org
 ```
 Then set the shared password and proxy config it prints at the end.
 
 **Worker (church PC),** from an administrator PowerShell:
 ```powershell
 powershell -ExecutionPolicy Bypass -File worker\setup-windows.ps1 `
-    -Url "https://hopewell.tristanaddi.com" -Token "<worker token>"
+    -Url "https://lyrics.yourdomain.org" -Token "<worker token>"
 ```
 Finds the ffmpeg and yt-dlp already on that machine and records their paths
 rather than changing PATH, installs a real Python if only the Windows Store

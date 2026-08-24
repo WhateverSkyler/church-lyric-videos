@@ -10,13 +10,13 @@
 #
 # Prerequisites, done once in the CloudPanel UI:
 #   1. Create a site with the site-user below, type "Python" or "Static"
-#   2. DNS is already in place: hopewell.tristanaddi.com -> this box, and it
-#      must stay DNS-only (grey cloud). Cloudflare's free plan rejects proxied
-#      uploads over 100 MB, and a finished video is routinely larger than that,
-#      so proxying the record would break the worker's upload on longer songs.
+#   2. Point the domain at this box. If it sits behind Cloudflare the record
+#      must stay DNS-only (grey cloud): the free plan rejects proxied uploads
+#      over 100 MB, and a finished video is routinely larger than that, so
+#      proxying it would break the worker's upload on longer songs.
 set -euo pipefail
 
-DOMAIN="${1:-hopewell.tristanaddi.com}"
+DOMAIN="${1:?usage: deploy-dashboard.sh <domain>}"
 SITE_USER="${SITE_USER:-hopewell}"
 SSH_HOST="${SSH_HOST:-hetzner}"
 APP_DIR="/home/${SITE_USER}/htdocs/${DOMAIN}"

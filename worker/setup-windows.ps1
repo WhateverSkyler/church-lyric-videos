@@ -5,7 +5,7 @@
 
         cd C:\Hopewell\church-lyric-videos
         powershell -ExecutionPolicy Bypass -File worker\setup-windows.ps1 `
-            -Url "https://hopewell.tristanaddi.com" -Token "<worker token>"
+            -Url "https://lyrics.yourdomain.org" -Token "<worker token>"
 
     This machine also runs the Sunday livestream, so the installer is
     deliberately conservative about it:
