@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title or 'Song' }}{% endblock %}
+{% block body %}
+
+<p class="muted"><a href="{{ url_for('index') }}">&larr; Back to the queue</a></p>
+
+<div class="row">
+  <h1 class="grow" style="margin-bottom:.3rem">{{ job.title or 'Untitled song' }}</h1>
+  <span class="pill s-{{ job.stage }}">
+    {% if job.stage == 'review' %}Check words
+    {% elif job.stage == 'approved' %}Ready to render
+    {% elif job.stage == 'done' %}Ready to use
+    {% else %}{{ job.stage }}{% endif %}
+  </span>
+</div>
+<p class="muted">
+  {% if job.artist %}{{ job.artist }} · {% endif %}
+  added {{ job.created_at|ago }}{% if job.requested_by %} by {{ job.requested_by }}{% endif %}
+</p>
+
+{% if job.error %}
+  <div class="err"><b>Something went wrong.</b><br>{{ job.error }}</div>
+  <form method="post" action="{{ url_for('retry', job_id=job.id) }}" style="margin-bottom:1rem">
+    <button class="btn" type="submit">Try again</button>
+  </form>
+{% endif %}
+
+{% if job.notes %}<div class="note">{{ job.notes }}</div>{% endif %}
+
+{% if job.stage in ('queued','fetching','extracting','approved','rendering') %}
+  <div class="card">
+    <b>Working on it.</b>
+    <p class="muted" style="margin:.3rem 0 0">
+      {% if job.stage in ('queued','approved') %}
+        Waiting for the church computer to pick this up. It checks every few seconds.
+      {% elif job.stage == 'fetching' %}Downloading the track.
+      {% elif job.stage == 'extracting' %}Reading the words and working out the timing.
+      {% else %}Making the video. This takes several minutes.{% endif %}
+    </p>
+    {% if job.progress %}<div class="muted" style="margin-top:.4rem">{{ job.progress }}</div>{% endif %}
+  </div>
+  <script>setTimeout(function(){ location.reload(); }, 15000);</script>
+{% endif %}
+
+{% if job.stage == 'done' %}
+  <div class="card">
+    <div class="row">
+      <div class="grow">
+        <b>The video is ready.</b>
+        <div class="muted">{{ job.output_bytes|size }} · {{ job.theme }}</div>
+      </div>
+      <a class="btn go" href="{{ url_for('download', job_id=job.id) }}">Download</a>
+    </div>
+    <p class="hint">
+      It's also saved on the church computer, so you don't have to download it here
+      unless you want it somewhere else.
+    </p>
+  </div>
+{% endif %}
+
+{% if job.stage == 'review' %}
+<form method="post" action="{{ url_for('approve', job_id=job.id) }}">
+  <div class="card">
+    <h2 style="margin-top:0">Check the words</h2>
+    <p class="muted">
+      These were read automatically, so there may be a mistake or two — especially
+      an <b>I</b> that came out as a bar, or a word that ran together.
+      Fix anything that looks wrong, then send it to be made.
+    </p>
+    {% if job.alignment_confidence %}
+      <p class="muted">Timing confidence: {{ '%.0f'|format(job.alignment_confidence * 100) }}%</p>
+    {% endif %}
+
+    <label for="title2">Song name</label>
+    <input type="text" id="title2" name="title" value="{{ job.title }}">
+
+    <label for="lyrics">Words and timing</label>
+    <textarea id="lyrics" name="lyrics" spellcheck="true">{{ job.lyrics }}</textarea>
+    <div class="hint">
+      Each line starts with when it appears and when it disappears, like
+      <code>[00:12.40 -&gt; 00:16.80]</code>. Change the words freely.
+      To split a line across two rows on screen, put the second row underneath,
+      indented — leave the timing alone.
+    </div>
+
+    <label>Look</label>
+    <div class="themegrid">
+      {% for t in themes %}
+      <label>
+        <input type="radio" name="theme" value="{{ t.key }}"
+               {{ 'checked' if t.key == job.theme }}>
+        <div class="tile">
+          <span class="mood">{{ t.mood }}</span>
+          <b>{{ t.name }}</b>
+          <p>{{ t.description }}</p>
+        </div>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <p>
+    <button class="btn go" type="submit">Looks right — make the video</button>
+  </p>
+</form>
+{% elif job.lyrics %}
+  <div class="card">
+    <h2 style="margin-top:0">Words</h2>
+    <textarea readonly style="min-height:14rem">{{ job.lyrics }}</textarea>
+  </div>
+{% endif %}
+
+<form method="post" action="{{ url_for('delete', job_id=job.id) }}"
+      onsubmit="return confirm('Remove this song from the queue for good?')">
+  <button class="btn warn" type="submit">Remove this song</button>
+</form>
+{% endblock %}

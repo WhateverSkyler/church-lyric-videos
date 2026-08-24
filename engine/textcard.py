@@ -122,23 +122,59 @@ def _text_width(draw, text: str, font, letter_spacing: float) -> float:
 
 
 def wrap_lines(text: str, font, draw, max_px: float, letter_spacing: float) -> list:
-    """Greedy word wrap. Respects explicit newlines the lyric author wrote."""
+    """Word wrap, balanced. Respects explicit newlines the lyric author wrote."""
     out = []
     for paragraph in text.split("\n"):
         words = paragraph.split()
         if not words:
             out.append("")
             continue
+
+        rows = []
         current = words[0]
         for word in words[1:]:
             candidate = f"{current} {word}"
             if _text_width(draw, candidate, font, letter_spacing) <= max_px:
                 current = candidate
             else:
-                out.append(current)
+                rows.append(current)
                 current = word
-        out.append(current)
+        rows.append(current)
+        out.extend(_balance(rows, font, draw, max_px, letter_spacing))
     return out
+
+
+def _balance(rows: list, font, draw, max_px: float, letter_spacing: float,
+             orphan_ratio: float = 0.42) -> list:
+    """Pull words down so a wrapped line never ends on a lonely orphan.
+
+    Greedy wrapping fills each row to the brim, which regularly strands one
+    short word on a row of its own. On a sanctuary screen that reads as a
+    mistake, so any final row much narrower than the one above it borrows
+    words from above until the two are closer in length.
+    """
+    if len(rows) < 2:
+        return rows
+
+    rows = list(rows)
+    for i in range(len(rows) - 1, 0, -1):
+        guard = 0
+        while guard < 6:
+            guard += 1
+            above, below = rows[i - 1], rows[i]
+            above_w = _text_width(draw, above, font, letter_spacing)
+            below_w = _text_width(draw, below, font, letter_spacing)
+            if below_w >= above_w * orphan_ratio:
+                break
+            parts = above.split()
+            if len(parts) < 2:
+                break
+            moved = f"{parts[-1]} {below}"
+            if _text_width(draw, moved, font, letter_spacing) > max_px:
+                break
+            rows[i - 1] = " ".join(parts[:-1])
+            rows[i] = moved
+    return rows
 
 
 def _draw_spaced(draw, xy, text: str, font, fill, letter_spacing: float,

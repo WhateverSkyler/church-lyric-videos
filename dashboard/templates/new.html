@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}New song{% endblock %}
+{% block body %}
+
+<h1>Add a song</h1>
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+<form method="post" action="{{ url_for('create_job') }}">
+<div class="card">
+
+  <label for="title">Song name</label>
+  <input type="text" id="title" name="title" placeholder="e.g. Great Is Thy Faithfulness"
+         value="{{ request.form.title or '' }}">
+
+  <label for="artist">Artist <span class="muted">(optional)</span></label>
+  <input type="text" id="artist" name="artist" value="{{ request.form.artist or '' }}">
+
+  <label>What are you starting from?</label>
+  <div class="themegrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
+    <label>
+      <input type="radio" name="source" value="lyric_video" checked
+             onchange="document.getElementById('orig').style.display='none'">
+      <div class="tile">
+        <span class="mood">Most of the time</span>
+        <b>A lyric video</b>
+        <p>The usual one. Paste a YouTube link to the instrumental-with-lyrics
+           video you'd normally play. We read the words and their timing straight
+           off it, then rebuild it in our own styling.</p>
+      </div>
+    </label>
+    <label>
+      <input type="radio" name="source" value="instrumental"
+             onchange="document.getElementById('orig').style.display='block'">
+      <div class="tile">
+        <span class="mood">Harder</span>
+        <b>Just an instrumental</b>
+        <p>No lyrics on screen to read. We work out the timing from the original
+           recording instead, so you'll need to paste a link to that too.</p>
+      </div>
+    </label>
+  </div>
+
+  <label for="source_ref">Link to the track</label>
+  <input type="url" id="source_ref" name="source_ref" required
+         placeholder="https://www.youtube.com/watch?v=..."
+         value="{{ request.form.source_ref or '' }}">
+  <div class="hint">A YouTube link is fine. This is the audio the finished video will use.</div>
+
+  <div id="orig" style="display:none">
+    <label for="original_ref">Link to the original recording (with singing)</label>
+    <input type="url" id="original_ref" name="original_ref"
+           placeholder="https://www.youtube.com/watch?v=..."
+           value="{{ request.form.original_ref or '' }}">
+    <div class="hint">
+      Only used to work out <em>when</em> each line is sung. The finished video
+      still uses the instrumental you linked above.
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <label>Pick a look</label>
+  <div class="hint" style="margin:0 0 .7rem">
+    They all use the church's colours and logo — just different moods, so every
+    week doesn't look the same.
+  </div>
+  <div class="themegrid">
+    {% for t in themes %}
+    <label>
+      <input type="radio" name="theme" value="{{ t.key }}" {{ 'checked' if loop.first }}>
+      <div class="tile">
+        <span class="mood">{{ t.mood }}</span>
+        <b>{{ t.name }}</b>
+        <p>{{ t.description }}</p>
+      </div>
+    </label>
+    {% endfor %}
+    <label>
+      <input type="radio" name="theme" value="random">
+      <div class="tile">
+        <span class="mood">can't decide</span>
+        <b>Surprise me</b>
+        <p>Picks one of the looks above for you.</p>
+      </div>
+    </label>
+  </div>
+</div>
+
+<p>
+  <button class="btn go" type="submit">Add to the queue</button>
+  <a class="btn alt" href="{{ url_for('index') }}">Cancel</a>
+</p>
+<p class="muted">
+  The church computer picks this up on its own. You'll get a chance to check the
+  words before the video is made.
+</p>
+</form>
+{% endblock %}

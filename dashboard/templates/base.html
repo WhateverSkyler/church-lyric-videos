@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Lyric Videos{% endblock %} · Hopewell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* Hopewell palette, sampled from the church logo. */
+:root{
+  --navy:#004878; --navy-deep:#00304F; --blue:#04508C;
+  --amber:#F0A818; --gold:#F0A848; --wheat:#F0D890; --ember:#D84830;
+  --grass:#90C060; --sage:#A8C078;
+  --ink:#0F1419; --panel:#FFFFFF; --line:#E3E7EC;
+  --text:#1E2833; --muted:#5C6B7A; --bg:#F4F6F8;
+  --radius:10px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:16px/1.55 Lato,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+
+header.top{background:var(--navy-deep);color:#fff;padding:.85rem 1rem;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+header.top .brand{font-family:Merriweather,Georgia,serif;font-weight:700;
+  font-size:1.15rem;letter-spacing:.2px}
+header.top .brand span{color:var(--wheat)}
+header.top nav{margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap}
+header.top nav a{color:#DDE6EE;padding:.4rem .7rem;border-radius:var(--radius);
+  font-weight:700;font-size:.9rem}
+header.top nav a:hover{background:rgba(255,255,255,.12);text-decoration:none}
+header.top nav a.cta{background:var(--amber);color:#3A2600}
+header.top nav a.cta:hover{background:var(--gold)}
+
+main{max-width:1000px;margin:0 auto;padding:1.25rem 1rem 4rem}
+h1{font-family:Merriweather,Georgia,serif;font-size:1.5rem;margin:.2rem 0 1rem}
+h2{font-size:1.05rem;margin:1.6rem 0 .6rem}
+
+.card{background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);padding:1rem;margin-bottom:.75rem}
+
+.pill{display:inline-block;padding:.15rem .55rem;border-radius:999px;
+  font-size:.72rem;font-weight:900;letter-spacing:.06em;text-transform:uppercase}
+.s-queued,.s-approved{background:#E7EDF3;color:#40566B}
+.s-fetching,.s-extracting,.s-rendering{background:#FDF0D6;color:#7A5310}
+.s-review{background:#DCEBFA;color:var(--blue)}
+.s-done{background:#E2F3E0;color:#2C6B25}
+.s-failed{background:#FBE2DE;color:#8C2A17}
+.s-expired{background:#EEE;color:#777}
+
+.row{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap}
+.row .grow{flex:1;min-width:12rem}
+.muted{color:var(--muted);font-size:.86rem}
+
+.btn{display:inline-block;border:0;border-radius:var(--radius);cursor:pointer;
+  padding:.6rem 1rem;font:700 .95rem Lato,sans-serif;background:var(--blue);color:#fff}
+.btn:hover{background:var(--navy);text-decoration:none}
+.btn.alt{background:#E7EDF3;color:var(--text)}
+.btn.alt:hover{background:#D8E2EB}
+.btn.warn{background:#B23A22}
+.btn.go{background:var(--amber);color:#3A2600}
+.btn.go:hover{background:var(--gold)}
+
+label{display:block;font-weight:700;font-size:.85rem;margin:.9rem 0 .3rem}
+input[type=text],input[type=url],select,textarea{width:100%;padding:.6rem .7rem;
+  border:1px solid #CBD4DD;border-radius:var(--radius);font:15px Lato,sans-serif;
+  background:#fff;color:var(--text)}
+textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;
+  line-height:1.6;min-height:22rem;white-space:pre;overflow-wrap:normal;overflow-x:auto}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:1px}
+
+.hint{font-size:.84rem;color:var(--muted);margin-top:.3rem}
+.err{background:#FBE2DE;border:1px solid #F0B6AA;color:#8C2A17;
+  padding:.7rem .9rem;border-radius:var(--radius);margin-bottom:1rem}
+.ok{background:#E2F3E0;border:1px solid #B6DDB0;color:#2C6B25;
+  padding:.7rem .9rem;border-radius:var(--radius);margin-bottom:1rem}
+.note{background:#FDF6E6;border:1px solid #EBD9A8;color:#6B5210;
+  padding:.7rem .9rem;border-radius:var(--radius);margin:.6rem 0}
+
+table{width:100%;border-collapse:collapse}
+td,th{padding:.55rem .5rem;border-bottom:1px solid var(--line);text-align:left;
+  vertical-align:middle}
+th{font-size:.76rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+
+.themegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  gap:.6rem}
+.themegrid label{display:block;margin:0;cursor:pointer}
+.themegrid input{position:absolute;opacity:0;pointer-events:none}
+.themegrid .tile{border:2px solid var(--line);border-radius:var(--radius);
+  padding:.7rem;background:#fff;height:100%}
+.themegrid input:checked + .tile{border-color:var(--amber);
+  box-shadow:0 0 0 3px rgba(240,168,24,.18)}
+.themegrid .tile b{display:block;font-family:Merriweather,serif;font-size:.95rem}
+.themegrid .tile .mood{font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--amber);font-weight:900}
+.themegrid .tile p{margin:.35rem 0 0;font-size:.8rem;color:var(--muted);line-height:1.4}
+
+.bar{height:6px;background:#E7EDF3;border-radius:999px;overflow:hidden;margin-top:.4rem}
+.bar>i{display:block;height:100%;background:var(--amber)}
+@media (max-width:600px){
+  main{padding:1rem .7rem 3rem}
+  .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">Hopewell <span>Lyric Videos</span></div>
+  <nav>
+    <a href="{{ url_for('index') }}">Queue</a>
+    <a class="cta" href="{{ url_for('new_job_form') }}">+ New song</a>
+  </nav>
+</header>
+<main>
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

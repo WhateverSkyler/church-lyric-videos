@@ -26,3 +26,5 @@ samples/_smoke*
 assets/footage/raw/
 assets/footage/prepared/
 samples/ref/
+work/
+dashboard/themes.json

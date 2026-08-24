@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Queue{% endblock %}
+{% block body %}
+
+<h1>Song queue</h1>
+
+{% if counts.get('review') %}
+<div class="note">
+  <b>{{ counts['review'] }} song{{ 's' if counts['review'] != 1 else '' }} waiting to be checked.</b>
+  The words were read automatically off the source, so they need a quick read-through
+  before anything gets rendered.
+</div>
+{% endif %}
+
+{% if not jobs %}
+  <div class="card">
+    <p><b>Nothing queued yet.</b></p>
+    <p class="muted">Add a song and the church computer will pick it up and start
+      working on it. You don't need to be at the church, and you can close this page —
+      it keeps going without you.</p>
+    <p><a class="btn go" href="{{ url_for('new_job_form') }}">Add the first song</a></p>
+  </div>
+{% else %}
+<div class="card" style="padding:.4rem .8rem">
+<table>
+  <tr>
+    <th>Song</th>
+    <th>Status</th>
+    <th class="hide-sm">Look</th>
+    <th class="hide-sm">Added</th>
+    <th></th>
+  </tr>
+  {% for j in jobs %}
+  <tr>
+    <td>
+      <a href="{{ url_for('job_detail', job_id=j.id) }}"><b>{{ j.title or 'Untitled' }}</b></a>
+      {% if j.artist %}<div class="muted">{{ j.artist }}</div>{% endif %}
+      {% if j.progress and j.stage in ('rendering','extracting','fetching') %}
+        <div class="muted">{{ j.progress }}</div>
+      {% endif %}
+    </td>
+    <td>
+      <span class="pill s-{{ j.stage }}">
+        {% if j.stage == 'review' %}Check words
+        {% elif j.stage == 'approved' %}Ready
+        {% elif j.stage == 'done' %}Ready to use
+        {% else %}{{ j.stage }}{% endif %}
+      </span>
+    </td>
+    <td class="hide-sm muted">{{ j.theme }}</td>
+    <td class="hide-sm muted">{{ j.created_at|ago }}</td>
+    <td style="text-align:right">
+      {% if j.stage == 'done' %}
+        <a class="btn go" href="{{ url_for('download', job_id=j.id) }}">Download</a>
+      {% elif j.stage == 'review' %}
+        <a class="btn" href="{{ url_for('job_detail', job_id=j.id) }}">Check</a>
+      {% elif j.stage == 'failed' %}
+        <a class="btn alt" href="{{ url_for('job_detail', job_id=j.id) }}">See why</a>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+<p class="muted" style="margin-top:1.2rem">
+  Finished videos stay downloadable here for a while, then are cleared to save space.
+  The church computer keeps its own copy of every one.
+</p>
+
+{% if jobs and jobs|selectattr('stage','in',['rendering','fetching','extracting'])|list %}
+<script>
+  // A render takes minutes; refresh so progress moves without anyone reloading.
+  setTimeout(function(){ location.reload(); }, 25000);
+</script>
+{% endif %}
+{% endblock %}

@@ -289,6 +289,61 @@ def make_backend(prefer: str = "auto"):
 #: Characters OCR routinely invents in place of a capital I or l.
 _I_CONFUSIONS = ("|", "!", "¡", "1")
 
+#: Words that stay capitalised when a SHOUTED source line is normalised back
+#: to sentence case. Reverent capitalisation is the convention in printed
+#: worship lyrics, and getting it wrong is the kind of thing a congregation
+#: notices immediately.
+_ALWAYS_CAPITAL = {
+    "god", "lord", "jesus", "christ", "father", "saviour", "savior",
+    "spirit", "holy", "king", "almighty", "messiah", "emmanuel",
+    "immanuel", "yahweh", "abba", "redeemer", "lamb", "shepherd",
+    "i", "i'm", "i've", "i'll", "i'd",
+}
+
+#: Pronouns referring to God are conventionally capitalised mid-line too, but
+#: only when the surrounding line is about Him — too risky to guess, so these
+#: are left alone and the person reviewing can adjust.
+_SHOUT_RATIO = 0.75
+
+
+def normalise_case(text: str) -> str:
+    """Convert a SHOUTED source line back to sentence case.
+
+    Lyric videos overwhelmingly burn their text in capitals, and OCR faithfully
+    reproduces that. Carrying it through would mean every Hopewell video
+    inherits the styling of whichever YouTube video it came from — the exact
+    inconsistency this tool exists to remove. Case is a *theme* decision, so
+    the text is normalised here and each theme re-applies whatever it wants.
+
+    Mixed-case input is left completely alone; it already carries real
+    capitalisation worth preserving.
+    """
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return text
+    if sum(c.isupper() for c in letters) / len(letters) < _SHOUT_RATIO:
+        return text
+
+    out_rows = []
+    for row in text.split("\n"):
+        words = row.split()
+        rebuilt = []
+        for i, word in enumerate(words):
+            bare = word.lower()
+            stripped = bare.strip(".,!?;:\"'()")
+            if stripped in _ALWAYS_CAPITAL or i == 0:
+                # Capitalise the first letter, leaving any leading quote alone.
+                lowered = list(bare)
+                for j, ch in enumerate(lowered):
+                    if ch.isalpha():
+                        lowered[j] = ch.upper()
+                        break
+                rebuilt.append("".join(lowered))
+            else:
+                rebuilt.append(bare)
+        out_rows.append(" ".join(rebuilt))
+    return "\n".join(out_rows)
+
 
 def clean(raw: str) -> str:
     """Tidy one OCR result into something worth showing a human."""
@@ -309,7 +364,7 @@ def clean(raw: str) -> str:
         if letters < 2 or letters < len(row) * 0.45:
             continue
         lines.append(row)
-    return "\n".join(lines)
+    return normalise_case("\n".join(lines))
 
 
 def looks_suspect(text: str) -> bool:
