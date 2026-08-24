@@ -21,3 +21,8 @@ assets/backgrounds/
 samples/work/
 output/
 samples/_smoke*
+
+# Stock footage (regenerate with scripts/fetch_footage.py; catalog is tracked)
+assets/footage/raw/
+assets/footage/prepared/
+samples/ref/
