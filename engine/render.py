@@ -50,23 +50,65 @@ def available_encoders() -> set:
             if line.startswith(" V") and len(line.split()) > 1}
 
 
-def pick_encoder(prefer: str | None = None) -> tuple:
-    """Return (encoder_name, quality_args), fastest hardware option first.
+ENCODER_ARGS = {
+    "h264_nvenc": ["-preset", "p5", "-rc", "vbr", "-cq", "21", "-b:v", "0"],
+    "h264_videotoolbox": ["-q:v", "58", "-realtime", "0"],
+    "libx264": ["-preset", "medium", "-crf", "20"],
+}
 
-    The church PC has an RTX 3060 Ti, so NVENC is the expected path; the Mac
-    dev box falls back to VideoToolbox and CI to libx264.
+#: Cache of encoder -> works, so the smoke test runs once per process.
+_ENCODER_OK: dict = {}
+
+
+def encoder_works(name: str) -> bool:
+    """Actually encode two frames with `name` and see if it succeeds.
+
+    Being listed by `ffmpeg -encoders` is NOT proof an encoder is usable.
+    NVENC is compiled into every stock Windows build but fails at runtime when
+    the driver refuses a session — the card's simultaneous-session budget is
+    finite, and on a machine that is also livestreaming, OBS may already hold
+    them all. The church PC failed exactly this way (return code -22) while
+    still listing the encoder.
+    """
+    if name in _ENCODER_OK:
+        return _ENCODER_OK[name]
+    proc = subprocess.run(
+        [_ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
+         "-f", "lavfi", "-i", "color=c=black:s=256x144:d=0.1",
+         "-c:v", name, *ENCODER_ARGS.get(name, []),
+         "-frames:v", "2", "-f", "null", "-"],
+        capture_output=True, text=True)
+    _ENCODER_OK[name] = proc.returncode == 0
+    return _ENCODER_OK[name]
+
+
+def pick_encoder(prefer: str | None = None, allow_hardware: bool = True) -> tuple:
+    """Return (encoder_name, quality_args) for an encoder proven to work here.
+
+    Args:
+        allow_hardware: set False to force software encoding. The worker does
+            this whenever the machine might be livestreaming, so a render can
+            never take an NVENC session away from the service.
     """
     have = available_encoders()
     order = [prefer] if prefer else []
-    order += ["h264_nvenc", "h264_videotoolbox", "libx264"]
+    if allow_hardware:
+        order += ["h264_nvenc", "h264_videotoolbox"]
+    order += ["libx264"]
+
+    tried = []
     for name in order:
-        if name and name in have:
-            if name == "h264_nvenc":
-                return name, ["-preset", "p5", "-rc", "vbr", "-cq", "21", "-b:v", "0"]
-            if name == "h264_videotoolbox":
-                return name, ["-q:v", "58", "-realtime", "0"]
-            return name, ["-preset", "medium", "-crf", "20"]
-    raise RuntimeError(f"No usable H.264 encoder found. Have: {sorted(have)}")
+        if not name or name not in have:
+            continue
+        if name == "libx264" or encoder_works(name):
+            return name, ENCODER_ARGS.get(name, ["-preset", "medium", "-crf", "20"])
+        tried.append(name)
+
+    if "libx264" in have:
+        return "libx264", ENCODER_ARGS["libx264"]
+    raise RuntimeError(
+        f"No usable H.264 encoder. Listed: {sorted(have)}; failed smoke test: {tried}"
+    )
 
 
 def probe_duration(path: Path) -> float:
