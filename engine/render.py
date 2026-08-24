@@ -130,7 +130,16 @@ def probe_duration(path: Path) -> float:
 
 
 def logo_layer(theme: Theme, frame: tuple = FRAME) -> Image.Image:
-    """A full-frame transparent layer holding just the church mark."""
+    """A full-frame transparent layer holding just the church mark.
+
+    The mark is carried at real strength rather than as a faint watermark.
+    These videos are meant to be identifiably the church's, and a logo dimmed
+    into the background reads as an accident rather than as restraint. A soft
+    dark halo sits behind it so it holds its edge over pale footage without
+    having to be outlined.
+    """
+    from PIL import ImageFilter
+
     spec = theme.logo
     layer = Image.new("RGBA", frame, (0, 0, 0, 0))
     if not LOGO_HORIZONTAL.is_file():
@@ -157,6 +166,18 @@ def logo_layer(theme: Theme, frame: tuple = FRAME) -> Image.Image:
          "c": (frame[0] - target_w) // 2,
          "r": frame[0] - target_w - margin_x}[horizontal]
     y = margin_y if vertical == "t" else frame[1] - target_h - margin_y
+
+    if spec.halo > 0:
+        pad = int(spec.halo * 2.5)
+        glow = Image.new("RGBA", (target_w + pad * 2, target_h + pad * 2), (0, 0, 0, 0))
+        shape = Image.new("RGBA", mark.size, hex_to_rgb(spec.halo_color) + (0,))
+        shape.putalpha(mark.getchannel("A"))
+        glow.paste(shape, (pad, pad))
+        glow = glow.filter(ImageFilter.GaussianBlur(spec.halo))
+        alpha = glow.getchannel("A").point(
+            lambda v: min(255, int(v * spec.halo_strength)))
+        glow.putalpha(alpha)
+        layer.alpha_composite(glow, dest=(max(0, x - pad), max(0, y - pad)))
 
     layer.paste(mark, (x, y), mark)
     return layer

@@ -198,13 +198,20 @@ class TextAnimation:
 
 
 #: Ready-made combinations themes can point at.
+#:
+#: Every preset holds STILL once the words have arrived. Idle motion — the
+#: breathing, floating and drifting these used to do — looked good in isolation
+#: and was wrong for the job: people are reading these words in order to sing
+#: them, and type that moves under the eye costs reading speed for decoration
+#: nobody asked for. Movement now happens only on the way in and on the way
+#: out, never while a line is being read.
 PRESETS = {
-    "gentle":    TextAnimation("fade", "fade", "breathe", 0.70, 0.50, 0.045),
-    "lift":      TextAnimation("lift", "fade", "breathe", 0.62, 0.44, 0.075),
-    "rise":      TextAnimation("rise", "sink", "drift", 0.58, 0.42, 0.065),
-    "focus":     TextAnimation("blur", "blur", "breathe", 0.66, 0.46, 0.055),
-    "reveal":    TextAnimation("zoom", "fade", "still", 0.54, 0.40, 0.090),
-    "hymn":      TextAnimation("fade", "fade", "float", 0.85, 0.60, 0.030),
+    "gentle":    TextAnimation("fade", "fade", "still", 0.52, 0.40, 0.035),
+    "lift":      TextAnimation("lift", "fade", "still", 0.50, 0.38, 0.055),
+    "rise":      TextAnimation("rise", "sink", "still", 0.48, 0.36, 0.050),
+    "focus":     TextAnimation("blur", "blur", "still", 0.54, 0.40, 0.045),
+    "reveal":    TextAnimation("zoom", "fade", "still", 0.46, 0.34, 0.065),
+    "hymn":      TextAnimation("fade", "fade", "still", 0.62, 0.46, 0.028),
 }
 
 

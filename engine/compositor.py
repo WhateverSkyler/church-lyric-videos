@@ -32,7 +32,8 @@ import numpy as np
 from . import footage as footage_mod
 from .anim import Transform
 from .lyrics import LyricLine
-from .render import FRAME, FPS, logo_layer, pick_encoder, probe_duration
+from . import splash
+from .render import FRAME, FPS, pick_encoder, probe_duration
 from .textanim import TextAnimation
 from .themes import Theme
 from .typeset import typeset
@@ -78,12 +79,54 @@ def blend_rgba(dst: np.ndarray, rgb: np.ndarray, alpha: np.ndarray,
 
 @dataclass
 class PreparedLine:
-    """One lyric line, rasterised and ready to animate."""
+    """One lyric line, rasterised and ready to animate.
+
+    `anim_start` is normally EARLIER than the lyric's own start time. The cue
+    a singer reacts to is the moment the words are readable, not the moment
+    they begin fading up — so the entrance is run ahead of the cue and timed
+    to settle exactly on it. Without this the line lands one whole entrance
+    duration late, which is precisely the drift that makes someone come in
+    behind the music.
+    """
 
     line: LyricLine
     sprites: list
     #: id(sprite) -> {(scale, blur): (rgb, alpha, w, h)}
     cache: dict
+    #: Absolute time the entrance begins.
+    anim_start: float = 0.0
+    #: Length of the whole animation, entrance through exit.
+    anim_span: float = 1.0
+
+    @property
+    def visible_from(self) -> float:
+        return self.anim_start
+
+    @property
+    def visible_until(self) -> float:
+        return self.anim_start + self.anim_span
+
+
+def plan_line(line: LyricLine, sprites: list, animation: TextAnimation,
+              previous_end: float | None, max_overlap: float = 0.34) -> tuple:
+    """Work out when a line's animation should start and how long it runs.
+
+    The entrance is pulled earlier so the words settle on `line.start`, but
+    never so far that it crowds the line before it. Where the gap is tight the
+    lead-in is trimmed, which shortens the entrance rather than delaying the
+    cue — being slightly less animated is always preferable to being late.
+    """
+    span = max(0.25, line.end - line.start)
+    lead = animation.total_lead_in(len(sprites), span)
+
+    if previous_end is not None:
+        available = line.start - previous_end + max_overlap
+        lead = max(0.0, min(lead, available))
+
+    anim_start = max(0.0, line.start - lead)
+    # Exit begins at line.end: entrance lead + the held portion + the exit.
+    anim_span = lead + (line.end - line.start) + animation.exit_dur
+    return anim_start, max(0.3, anim_span)
 
 
 def _sprite_variant(sprite, tf: Transform, cache: dict):
@@ -213,6 +256,152 @@ class PlateSource:
 # --------------------------------------------------------------------------
 
 
+class BrandMark:
+    """Draws the church mark, the opening title and the closing tagline.
+
+    The mark is one continuous element across the whole video: it opens large
+    and centred, travels to its corner, sits there through the song, and comes
+    back at the end. Sizes are quantised before scaling so the travel — the
+    only moment the mark changes size — reuses a few dozen cached bitmaps
+    rather than resampling the logo on every frame.
+    """
+
+    #: Scaled logo widths are rounded to this many pixels before caching.
+    SIZE_STEP = 6
+
+    def __init__(self, theme: Theme, frame: tuple, duration: float,
+                 first_lyric: float, last_lyric_end: float, title: str = ""):
+        from PIL import Image
+
+        from .brand import LOGO_HORIZONTAL
+
+        self.frame = frame
+        self.theme = theme
+        self._cache: dict = {}
+
+        self.source = (Image.open(LOGO_HORIZONTAL).convert("RGBA")
+                       if LOGO_HORIZONTAL.is_file() else None)
+
+        self.plan = splash.build_plan(
+            duration, first_lyric, last_lyric_end,
+            corner=self._corner_state(), centre_width=0.44)
+
+        self.title_card = self._text_card(splash.title_text(title), size=0.62,
+                                          y=0.655) if self.plan.has_intro else None
+        self.tagline_card = self._text_card(splash.closing_text(), size=0.46,
+                                            y=0.655, italic=True) \
+            if self.plan.has_outro else None
+
+    # -- geometry -------------------------------------------------------
+
+    def _corner_state(self) -> splash.LogoState:
+        """Turn the theme's anchor+margin into a centre-point fraction."""
+        spec = self.theme.logo
+        w, h = self.frame
+        if self.source is None:
+            return splash.LogoState(0.5, 0.9, spec.width, spec.opacity)
+        target_w = w * spec.width
+        target_h = target_w * self.source.height / self.source.width
+        vertical, horizontal = spec.anchor[0], spec.anchor[1]
+        cx = {"l": (w * spec.margin + target_w / 2) / w,
+              "c": 0.5,
+              "r": (w - w * spec.margin - target_w / 2) / w}[horizontal]
+        cy = ((h * spec.margin + target_h / 2) / h if vertical == "t"
+              else (h - h * spec.margin - target_h / 2) / h)
+        return splash.LogoState(cx, cy, spec.width, spec.opacity)
+
+    # -- pieces ---------------------------------------------------------
+
+    def _text_card(self, text: str, size: float, y: float,
+                   italic: bool = False):
+        """Pre-render one line of splash text as a full-frame RGBA array."""
+        from dataclasses import replace
+
+        from .textcard import Shadow, render_card
+
+        base = self.theme.text
+        style = replace(
+            base,
+            size=int(base.size * size),
+            align_y=y,
+            max_width=0.80,
+            glow=None,
+            shadow=Shadow(opacity=0.75, blur=24, offset=(0, 6)),
+            letter_spacing=base.letter_spacing + (2.0 if italic else 0.6),
+        )
+        arr = np.asarray(render_card(text, style, self.frame),
+                         dtype=np.float32) / 255.0
+        return (np.ascontiguousarray(arr[..., :3]),
+                np.ascontiguousarray(arr[..., 3]))
+
+    def _logo_at(self, width_px: int):
+        """A cached RGB/alpha pair for the mark at a given pixel width."""
+        key = max(self.SIZE_STEP, int(round(width_px / self.SIZE_STEP)) * self.SIZE_STEP)
+        hit = self._cache.get(key)
+        if hit is not None:
+            return hit
+
+        from PIL import Image, ImageFilter
+
+        from .brand import hex_to_rgb
+
+        spec = self.theme.logo
+        height = max(1, round(self.source.height * key / self.source.width))
+        mark = self.source.resize((key, height), Image.LANCZOS)
+
+        if spec.monochrome:
+            flat = Image.new("RGBA", mark.size, hex_to_rgb(spec.mono_color) + (0,))
+            flat.putalpha(mark.getchannel("A"))
+            mark = flat
+
+        pad = int(spec.halo * 2.5) if spec.halo > 0 else 0
+        canvas = Image.new("RGBA", (key + pad * 2, height + pad * 2), (0, 0, 0, 0))
+        if pad:
+            shape = Image.new("RGBA", mark.size, hex_to_rgb(spec.halo_color) + (0,))
+            shape.putalpha(mark.getchannel("A"))
+            glow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+            glow.paste(shape, (pad, pad))
+            glow = glow.filter(ImageFilter.GaussianBlur(spec.halo))
+            alpha = glow.getchannel("A").point(
+                lambda v: min(255, int(v * spec.halo_strength)))
+            glow.putalpha(alpha)
+            canvas.alpha_composite(glow)
+        canvas.paste(mark, (pad, pad), mark)
+
+        arr = np.asarray(canvas, dtype=np.float32) / 255.0
+        out = (np.ascontiguousarray(arr[..., :3]),
+               np.ascontiguousarray(arr[..., 3]),
+               canvas.width, canvas.height)
+        self._cache[key] = out
+        return out
+
+    # -- per frame ------------------------------------------------------
+
+    def draw(self, canvas: np.ndarray, t: float) -> None:
+        if self.source is None:
+            return
+
+        if self.title_card is not None:
+            alpha = splash.title_opacity(self.plan, t)
+            if alpha > 0.004:
+                blend_rgba(canvas, self.title_card[0], self.title_card[1],
+                           0, 0, opacity=alpha)
+
+        if self.tagline_card is not None:
+            alpha = splash.tagline_opacity(self.plan, t)
+            if alpha > 0.004:
+                blend_rgba(canvas, self.tagline_card[0], self.tagline_card[1],
+                           0, 0, opacity=alpha)
+
+        state = splash.logo_state(self.plan, t)
+        if state.opacity <= 0.004:
+            return
+        rgb, alpha, w, h = self._logo_at(int(self.frame[0] * state.width))
+        x = int(round(self.frame[0] * state.cx - w / 2))
+        y = int(round(self.frame[1] * state.cy - h / 2))
+        blend_rgba(canvas, rgb, alpha, x, y, opacity=state.opacity)
+
+
 @dataclass
 class Result:
     path: Path
@@ -249,25 +438,26 @@ def render_animated(theme: Theme, lines: list, audio: Path, out: Path,
         source = PlateSource(theme, frame, fps, duration)
 
     # --- rasterise every line --------------------------------------------
-    ordered = sorted((l for l in lines if l.text.strip()), key=lambda l: l.start)
-    cards = []
-    if title:
-        first = ordered[0].start if ordered else 6.0
-        if first > 1.8:
-            cards.append(LyricLine(title, 0.4, max(1.4, first - 0.55)))
-    cards.extend(ordered)
+    cards = sorted((l for l in lines if l.text.strip()), key=lambda l: l.start)
 
     prepared = []
+    previous_end = None
     for i, line in enumerate(cards):
         sprites, _ = typeset(line.text, theme.text, frame)
-        prepared.append(PreparedLine(line, sprites, {id(s): {} for s in sprites}))
+        anim_start, anim_span = plan_line(line, sprites, animation, previous_end)
+        prepared.append(PreparedLine(line, sprites,
+                                     {id(s): {} for s in sprites},
+                                     anim_start, anim_span))
+        previous_end = line.end
         if progress:
             progress("typeset", i + 1, len(cards))
 
-    logo = logo_layer(theme, frame)
-    logo_arr = np.asarray(logo, dtype=np.float32) / 255.0
-    logo_rgb = np.ascontiguousarray(logo_arr[..., :3])
-    logo_a = np.ascontiguousarray(logo_arr[..., 3])
+    # --- the branded open and close --------------------------------------
+    brand = BrandMark(theme, frame,
+                      duration=duration,
+                      first_lyric=cards[0].start if cards else duration,
+                      last_lyric_end=cards[-1].end if cards else 0.0,
+                      title=title or "")
 
     # --- encoder ----------------------------------------------------------
     cmd = [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -287,11 +477,10 @@ def render_animated(theme: Theme, lines: list, audio: Path, out: Path,
             canvas = source.read()
 
             for pl in prepared:
-                line = pl.line
-                if t < line.start - 0.05 or t > line.end + 0.05:
+                if t < pl.visible_from or t > pl.visible_until:
                     continue
-                t_local = t - line.start
-                span = max(0.2, line.end - line.start)
+                t_local = t - pl.anim_start
+                span = pl.anim_span
                 count = len(pl.sprites)
                 for idx, sprite in enumerate(pl.sprites):
                     tf = animation.transform_for(idx, count, t_local, span)
@@ -305,7 +494,7 @@ def render_animated(theme: Theme, lines: list, audio: Path, out: Path,
                                    opacity=tf.glow, screen=True)
                     blend_rgba(canvas, rgb, alpha, ox, oy, opacity=tf.opacity)
 
-            blend_rgba(canvas, logo_rgb, logo_a, 0, 0)
+            brand.draw(canvas, t)
             sink.stdin.write(canvas.tobytes())
 
             if progress and n % (fps * 5) == 0:

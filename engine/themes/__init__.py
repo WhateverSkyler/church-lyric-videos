@@ -41,13 +41,18 @@ class LogoMark:
     #: Anchor: one of tl, tc, tr, bl, bc, br.
     anchor: str = "bl"
     #: Width as a fraction of frame width.
-    width: float = 0.155
-    opacity: float = 0.5
-    margin: float = 0.045
+    width: float = 0.185
+    opacity: float = 0.88
+    margin: float = 0.042
     #: Recolour the mark to flat white — for busy or light backgrounds where
     #: the full-colour sunburst competes with the lyrics.
     monochrome: bool = False
     mono_color: str = Palette.WHITE
+    #: Blur radius of the halo behind the mark, so it keeps its edge over pale
+    #: or busy footage. 0 disables it.
+    halo: float = 16.0
+    halo_color: str = "#000000"
+    halo_strength: float = 1.6
 
 
 @dataclass(frozen=True)
@@ -112,17 +117,18 @@ CINEMATIC_WARM = Theme(
     mood="warm",
     animation=ANIM["lift"],
     text=TextStyle(
-        face=Fonts.SERIF_BOLD, size=80,
+        face=Fonts.SERIF_BLACK, size=106,
         gradient=(Palette.WHITE, "#FFF6E4", Palette.WHEAT),
-        glow=Glow(color=Palette.AMBER, opacity=0.30, blur=40, passes=1),
-        shadow=Shadow(opacity=0.62, blur=22, offset=(0, 7)),
-        letter_spacing=1.0, line_spacing=1.34, max_width=0.76,
+        glow=Glow(color=Palette.AMBER, opacity=0.26, blur=46, passes=1),
+        shadow=Shadow(opacity=0.80, blur=30, offset=(0, 8)),
+        stroke_width=2, stroke_color="#0A0705",
+        letter_spacing=0.5, line_spacing=1.24, max_width=0.86,
     ),
     build_base=_cinematic_base,
     build_overlay=_cinematic_overlay,
     overlay_opacity=0.30,
     motion=Motion(zoom_from=1.0, zoom_to=1.10, overlay_spin=0.35),
-    logo=LogoMark(anchor="bl", width=0.15, opacity=0.42),
+    logo=LogoMark(anchor="bl", width=0.19, opacity=0.92),
 )
 
 
@@ -147,14 +153,15 @@ NAVY_MINIMAL = Theme(
     mood="clean",
     animation=ANIM["gentle"],
     text=TextStyle(
-        face=Fonts.SANS_BLACK, size=76, color=Palette.WHITE,
+        face=Fonts.SANS_BLACK, size=100, color=Palette.WHITE,
         glow=None,
-        shadow=Shadow(opacity=0.45, blur=16, offset=(0, 5)),
-        uppercase=True, letter_spacing=2.4, line_spacing=1.40, max_width=0.80,
+        shadow=Shadow(opacity=0.62, blur=22, offset=(0, 6)),
+        stroke_width=2, stroke_color="#001B2E",
+        letter_spacing=1.2, line_spacing=1.28, max_width=0.88,
     ),
     build_base=_navy_base,
     motion=Motion(zoom_from=1.0, zoom_to=1.05),
-    logo=LogoMark(anchor="br", width=0.14, opacity=0.38),
+    logo=LogoMark(anchor="br", width=0.18, opacity=0.92),
 )
 
 
@@ -193,17 +200,18 @@ STAINED_GLASS = Theme(
     mood="reverent",
     animation=ANIM["focus"],
     text=TextStyle(
-        face=Fonts.SERIF_BOLD, size=78,
+        face=Fonts.SERIF_BLACK, size=104,
         gradient=(Palette.WHITE, "#FFF4DC"),
-        glow=Glow(color=Palette.GOLD, opacity=0.26, blur=44, passes=1),
-        shadow=Shadow(opacity=0.72, blur=26, offset=(0, 8)),
-        letter_spacing=0.8, line_spacing=1.34, max_width=0.74,
+        glow=Glow(color=Palette.GOLD, opacity=0.22, blur=50, passes=1),
+        shadow=Shadow(opacity=0.84, blur=32, offset=(0, 9)),
+        stroke_width=3, stroke_color="#100A04",
+        letter_spacing=0.4, line_spacing=1.24, max_width=0.84,
     ),
     build_base=_glass_base,
     build_overlay=_glass_overlay,
     overlay_opacity=0.22,
     motion=Motion(zoom_from=1.02, zoom_to=1.14, overlay_spin=-0.5),
-    logo=LogoMark(anchor="bc", width=0.13, opacity=0.40, monochrome=True),
+    logo=LogoMark(anchor="bl", width=0.185, opacity=0.94, halo=20),
 )
 
 
@@ -236,17 +244,18 @@ SANCTUARY_DUSK = Theme(
     mood="reflective",
     animation=ANIM["hymn"],
     text=TextStyle(
-        face=Fonts.SERIF_REGULAR, size=82,
+        face=Fonts.SERIF_BOLD, size=108,
         gradient=(Palette.WHITE, "#FFEFD8"),
-        glow=Glow(color=Palette.SAND, opacity=0.24, blur=48, passes=1),
-        shadow=Shadow(opacity=0.58, blur=26, offset=(0, 8)),
-        letter_spacing=1.6, line_spacing=1.44, max_width=0.72,
+        glow=Glow(color=Palette.SAND, opacity=0.22, blur=52, passes=1),
+        shadow=Shadow(opacity=0.78, blur=32, offset=(0, 9)),
+        stroke_width=2, stroke_color="#0B0A12",
+        letter_spacing=0.8, line_spacing=1.26, max_width=0.86,
     ),
     build_base=_dusk_base,
     build_overlay=_dusk_overlay,
     overlay_opacity=0.30,
     motion=Motion(zoom_from=1.0, zoom_to=1.09, overlay_drift=(0.03, -0.015)),
-    logo=LogoMark(anchor="bl", width=0.145, opacity=0.40),
+    logo=LogoMark(anchor="bl", width=0.19, opacity=0.92),
 )
 
 
@@ -273,15 +282,17 @@ MORNING_LIGHT = Theme(
     mood="bright",
     animation=ANIM["rise"],
     text=TextStyle(
-        face=Fonts.SERIF_BOLD, size=78,
+        face=Fonts.SERIF_BLACK, size=104,
         color=Palette.NAVY_DEEP, gradient=None,
         glow=None,
-        shadow=Shadow(color="#8A6A3A", opacity=0.20, blur=14, offset=(0, 4)),
-        letter_spacing=0.6, line_spacing=1.36, max_width=0.74,
+        shadow=Shadow(color="#FFFFFF", opacity=0.55, blur=18, offset=(0, 0)),
+        stroke_width=2, stroke_color="#FFF6E8",
+        letter_spacing=0.4, line_spacing=1.26, max_width=0.86,
     ),
     build_base=_morning_base,
     motion=Motion(zoom_from=1.0, zoom_to=1.06),
-    logo=LogoMark(anchor="br", width=0.15, opacity=0.72),
+    logo=LogoMark(anchor="br", width=0.185, opacity=1.0, halo=14,
+                  halo_color="#FFFFFF", halo_strength=2.2),
 )
 
 
@@ -313,17 +324,18 @@ HILLSIDE = Theme(
     mood="hopeful",
     animation=ANIM["reveal"],
     text=TextStyle(
-        face=Fonts.SANS_BOLD, size=76,
+        face=Fonts.SANS_BLACK, size=102,
         gradient=(Palette.WHITE, "#F2FFE8"),
-        glow=Glow(color=Palette.LEAF, opacity=0.22, blur=38, passes=1),
-        shadow=Shadow(opacity=0.60, blur=20, offset=(0, 6)),
-        letter_spacing=1.2, line_spacing=1.38, max_width=0.78,
+        glow=Glow(color=Palette.LEAF, opacity=0.20, blur=44, passes=1),
+        shadow=Shadow(opacity=0.78, blur=28, offset=(0, 8)),
+        stroke_width=2, stroke_color="#08120A",
+        letter_spacing=0.6, line_spacing=1.26, max_width=0.86,
     ),
     build_base=_hillside_base,
     build_overlay=_hillside_overlay,
     overlay_opacity=0.24,
     motion=Motion(zoom_from=1.0, zoom_to=1.11, overlay_spin=0.25),
-    logo=LogoMark(anchor="bl", width=0.15, opacity=0.44),
+    logo=LogoMark(anchor="bl", width=0.19, opacity=0.92),
 )
 
 

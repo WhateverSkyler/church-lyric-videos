@@ -166,6 +166,159 @@ class Segment:
     end: float
     mask: np.ndarray
     frames: int = 1
+    #: True once the start time has been refined to native frame precision.
+    refined: bool = False
+
+
+# --------------------------------------------------------------------------
+# boundary refinement
+# --------------------------------------------------------------------------
+
+
+def native_fps(video: Path) -> float:
+    out = subprocess.run(
+        [shutil.which("ffprobe") or "ffprobe", "-v", "error",
+         "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+         "-of", "csv=p=0", str(video)],
+        capture_output=True, text=True)
+    try:
+        num, den = out.stdout.strip().split("/")
+        return float(num) / float(den)
+    except (ValueError, ZeroDivisionError):
+        return 30.0
+
+
+def _window_frames(video: Path, start: float, duration: float, size: tuple):
+    """Decode a short window at native rate. Yields (timestamp, mask)."""
+    w, h = size
+    frame_bytes = w * h * 3
+    proc = subprocess.Popen(
+        [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error",
+         # -ss before -i seeks by keyframe (fast), then -ss after trims exactly.
+         "-ss", f"{max(0.0, start - 2.0):.3f}", "-i", str(video),
+         "-ss", f"{min(2.0, start):.3f}", "-t", f"{duration:.3f}",
+         "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        bufsize=frame_bytes * 4)
+    fps = None
+    try:
+        n = 0
+        while True:
+            raw = proc.stdout.read(frame_bytes)
+            if not raw or len(raw) < frame_bytes:
+                break
+            frame = np.frombuffer(raw, dtype=np.uint8).reshape((h, w, 3))
+            yield n, text_mask(frame)
+            n += 1
+    finally:
+        if proc.stdout:
+            proc.stdout.close()
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def refine_start(video: Path, coarse_start: float, target: np.ndarray,
+                 size: tuple, fps: float, lookback: float = 0.40,
+                 lookahead: float = 0.25) -> float:
+    """Pin a card's start time to the frame it actually appears on.
+
+    The coarse sweep runs at SWEEP_FPS to keep the OCR cost sane, which leaves
+    each boundary uncertain by up to 1/SWEEP_FPS — 250 ms at 4/s. A quarter of
+    a second is invisible when reading a transcript and very visible when a
+    singer is watching for a cue, so every boundary is re-examined here at the
+    video's native frame rate.
+
+    Lyric videos usually FADE text in rather than cutting to it, so there is no
+    single frame where the words switch on. The onset is therefore defined as
+    the frame where the card reaches half its settled ink coverage, which is
+    both stable against fade length and close to when a person would say the
+    line became readable.
+    """
+    window_start = max(0.0, coarse_start - lookback)
+    duration = lookback + lookahead
+    target_ink = float(target.mean())
+    if target_ink <= 0:
+        return coarse_start
+
+    samples = []
+    for n, mask in _window_frames(video, window_start, duration, size):
+        # Compare against the card we are looking for, not just any ink: a
+        # dissolve between two cards has plenty of ink from the outgoing one.
+        overlap = float((mask & target).sum())
+        samples.append((n, overlap / max(1.0, float(target.sum()))))
+
+    if not samples:
+        return coarse_start
+
+    settled = max(v for _, v in samples)
+    if settled <= 0.05:
+        return coarse_start
+
+    threshold = settled * 0.5
+    for n, value in samples:
+        if value >= threshold:
+            return round(window_start + n / fps, 3)
+    return coarse_start
+
+
+def refine_end(video: Path, coarse_end: float, target: np.ndarray,
+               size: tuple, fps: float, lookback: float = 0.35,
+               lookahead: float = 0.40) -> float:
+    """Pin the frame a card falls below half its ink — the mirror of refine_start."""
+    window_start = max(0.0, coarse_end - lookback)
+    duration = lookback + lookahead
+    if float(target.sum()) <= 0:
+        return coarse_end
+
+    samples = []
+    for n, mask in _window_frames(video, window_start, duration, size):
+        overlap = float((mask & target).sum())
+        samples.append((n, overlap / max(1.0, float(target.sum()))))
+
+    if not samples:
+        return coarse_end
+    settled = max(v for _, v in samples)
+    if settled <= 0.05:
+        return coarse_end
+
+    threshold = settled * 0.5
+    # Walk backwards to the last frame that was still readable.
+    for n, value in reversed(samples):
+        if value >= threshold:
+            return round(window_start + n / fps, 3)
+    return coarse_end
+
+
+#: A measured gap smaller than this means the cards butt against each other,
+#: and the outgoing card should simply run until the next one arrives rather
+#: than blinking off for a few frames in between.
+BUTT_GAP = 0.45
+
+
+def refine_segments(video: Path, segments: list, progress=None) -> list:
+    """Re-time every segment boundary at the video's native frame rate."""
+    if not segments:
+        return segments
+    size = probe_size(video)
+    fps = native_fps(video)
+
+    for i, seg in enumerate(segments):
+        seg.start = refine_start(video, seg.start, seg.mask, size, fps)
+        seg.end = refine_end(video, seg.end, seg.mask, size, fps)
+        seg.refined = True
+        if progress:
+            progress("refine", i + 1, len(segments))
+
+    # Close small gaps so a card holds until its replacement actually appears.
+    for a, b in zip(segments, segments[1:]):
+        if 0 <= b.start - a.end <= BUTT_GAP:
+            a.end = b.start
+        if a.end > b.start:
+            a.end = b.start
+    return segments
 
 
 def segment(video: Path, fps: float = SWEEP_FPS, min_hold: float = 0.55,
@@ -384,15 +537,21 @@ def looks_suspect(text: str) -> bool:
 
 
 def extract(video: Path, fps: float = SWEEP_FPS, backend=None,
-            skip_head: float = 0.0, progress=None) -> LyricTrack:
+            skip_head: float = 0.0, refine: bool = True,
+            progress=None) -> LyricTrack:
     """Recover a timed LyricTrack from a burned-in lyric video.
 
     Args:
         skip_head: seconds to ignore at the start, for title cards. Segments
                    there are usually artist/title art, not lyrics.
+        refine:    re-time every boundary at the video's native frame rate.
+                   Leave this on — without it, cues carry up to 1/SWEEP_FPS of
+                   error, which a singer watching for an entrance will feel.
     """
     backend = backend or make_backend()
     segments = segment(video, fps, progress=progress)
+    if refine:
+        segments = refine_segments(video, segments, progress=progress)
 
     track = LyricTrack(source=str(video))
     with tempfile.TemporaryDirectory(prefix="hopewell-ocr-") as tmp:
