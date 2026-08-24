@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+
+<div class="card" style="max-width:26rem;margin:2.5rem auto;text-align:center">
+  <h1 style="margin:.2rem 0 .3rem">Hopewell Lyric Videos</h1>
+  <p class="muted" style="margin:0 0 1.2rem">
+    Enter the password to add and check songs.
+  </p>
+
+  {% if error %}<div class="err" style="text-align:left">{{ error }}</div>{% endif %}
+
+  <form method="post" action="{{ url_for('do_login') }}{{ ('?next=' ~ request.args.get('next')) if request.args.get('next') }}">
+    <label for="password" class="visually-hidden" style="text-align:left">Password</label>
+    <input type="password" id="password" name="password" required autofocus
+           autocomplete="current-password" placeholder="Password"
+           style="text-align:center;font-size:1.05rem;padding:.75rem">
+    <button class="btn go" type="submit"
+            style="width:100%;margin-top:.8rem;padding:.8rem">Sign in</button>
+  </form>
+
+  <p class="muted" style="margin:1rem 0 0;font-size:.8rem">
+    You'll stay signed in on this device, so you only have to do this once.
+  </p>
+</div>
+{% endblock %}

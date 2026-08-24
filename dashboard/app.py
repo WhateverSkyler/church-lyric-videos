@@ -10,9 +10,10 @@ Runs on the VPS, not on the church computer, so that:
 
 Two separate ways in, deliberately:
 
-  people   nginx basic auth in front of the whole UI. That is the church's
-           existing pattern on this box and it is what "one shared password"
-           actually means in practice.
+  people   one shared password on a normal sign-in page, held in a long-lived
+           session cookie. Deliberately not HTTP basic auth: that always
+           demands a username as well, and a second field nobody needs is the
+           kind of friction that ends with the password on a sticky note.
   worker   a bearer token on /api/*, so a leaked page password never lets
            somebody drive the render machine, and the token can be rotated
            without telling the whole team a new password.
@@ -24,11 +25,12 @@ import json
 import os
 import secrets
 import sys
+from datetime import timedelta
 import time
 from pathlib import Path
 
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
-                   send_from_directory, url_for)
+                   send_from_directory, session, url_for)
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -77,6 +79,109 @@ def worker_token() -> str:
         return candidate
     except FileExistsError:
         return path.read_text().strip()
+
+
+# --------------------------------------------------------------------------
+# people signing in
+# --------------------------------------------------------------------------
+
+#: How long a browser stays signed in. Long on purpose: this is a shared
+#: password for a volunteer team, and being asked to retype it every week is
+#: the thing that gets a password written on a sticky note by the sound desk.
+SESSION_DAYS = 120
+
+
+def secret_key() -> bytes:
+    """Signing key for the session cookie, generated once and kept."""
+    path = DATA_DIR / "session-key.bin"
+    if path.is_file():
+        return path.read_bytes()
+    key = secrets.token_bytes(32)
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(key)
+        return key
+    except FileExistsError:
+        return path.read_bytes()
+
+
+def password_hash() -> str:
+    """The stored hash of the shared password, seeded on first run."""
+    path = DATA_DIR / "password.hash"
+    if path.is_file():
+        return path.read_text().strip()
+    from werkzeug.security import generate_password_hash
+
+    value = generate_password_hash(
+        os.environ.get("HOPEWELL_PASSWORD", "PraiseTeam1"))
+    try:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(value)
+        return value
+    except FileExistsError:
+        return path.read_text().strip()
+
+
+def set_password(new: str) -> None:
+    from werkzeug.security import generate_password_hash
+
+    path = DATA_DIR / "password.hash"
+    path.write_text(generate_password_hash(new))
+    path.chmod(0o600)
+
+
+def signed_in() -> bool:
+    return bool(session.get("in"))
+
+
+@app.before_request
+def gate():
+    """One password for the whole site. The worker API is exempt.
+
+    /api/* authenticates with a bearer token instead, so that the shared
+    password the team knows can never be used to drive the render machine.
+    """
+    path = request.path
+    if path.startswith("/api/") or path in ("/healthz", "/login"):
+        return None
+    if path.startswith("/static/"):
+        return None
+    if not signed_in():
+        return redirect(url_for("login", next=request.full_path
+                                if request.query_string else request.path))
+    return None
+
+
+@app.get("/login")
+def login():
+    if signed_in():
+        return redirect(url_for("index"))
+    return render_template("login.html", error="")
+
+
+@app.post("/login")
+def do_login():
+    from werkzeug.security import check_password_hash
+
+    supplied = request.form.get("password", "")
+    if check_password_hash(password_hash(), supplied):
+        session.permanent = True
+        session["in"] = True
+        target = request.args.get("next") or url_for("index")
+        # Only ever redirect within this site.
+        if not target.startswith("/"):
+            target = url_for("index")
+        return redirect(target)
+    return render_template("login.html",
+                           error="That password isn't right. Try again."), 401
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 def require_worker() -> None:
@@ -385,6 +490,13 @@ def size(n: int) -> str:
             return f"{n:.0f} {unit}"
         n /= 1024
     return f"{n:.1f} TB"
+
+
+app.secret_key = secret_key()
+app.permanent_session_lifetime = timedelta(days=SESSION_DAYS)
+app.config.update(SESSION_COOKIE_HTTPONLY=True,
+                  SESSION_COOKIE_SAMESITE="Lax",
+                  SESSION_COOKIE_SECURE=not os.environ.get("HOPEWELL_DEBUG"))
 
 
 if __name__ == "__main__":
