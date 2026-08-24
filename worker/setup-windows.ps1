@@ -17,12 +17,11 @@
       * The scheduled task runs as SYSTEM at boot. There is no auto-login on
         this machine, so a task tied to the interactive session would not run
         after a restart until somebody signed in.
-      * Nothing is launched through a visible PowerShell window. Where
-        tools\run-hidden.vbs exists it is used, since a window appearing during
-        worship is exactly the sort of thing that has caused trouble here.
+      * The task runs in session 0, which has no interactive desktop, so
+        nothing it launches can put a window on screen during a service.
 
     The worker itself refuses to render during a service and never takes an
-    NVENC session while OBS is running — see worker\guard.py.
+    NVENC session while OBS is running - see worker\guard.py.
 #>
 
 param(
@@ -36,6 +35,16 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
 function Say  ($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
+function Fail ($m) { Write-Host "    x $m" -ForegroundColor Red; exit 1 }
+
+# pip reports failure through the exit code and nothing else. Without this the
+# installer sails past a broken install and reports success, which is how a
+# CPU-only torch got installed and went unnoticed.
+function Pip {
+    param([string]$Why, [string[]]$Args)
+    & $py -m pip @Args
+    if ($LASTEXITCODE -ne 0) { Fail "$Why failed (pip exit $LASTEXITCODE)." }
+}
 function Good ($m) { Write-Host "    $m"   -ForegroundColor Green }
 function Warn ($m) { Write-Host "    ! $m" -ForegroundColor Yellow }
 
@@ -87,7 +96,7 @@ if (-not $ffmpeg -or -not $ytdlp) {
         Good "yt-dlp installed to $ytdlp"
     }
     if (-not $ffmpeg) {
-        Warn "ffmpeg must be installed by hand — it is too large to fetch here."
+        Warn "ffmpeg must be installed by hand - it is too large to fetch here."
         Warn "Get a build from https://www.gyan.dev/ffmpeg/builds/ and put"
         Warn "ffmpeg.exe and ffprobe.exe in $toolDir"
     }
@@ -127,7 +136,7 @@ Say "Checking the GPU"
 $gpu = $null
 try { $gpu = & nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>$null } catch { }
 if ($gpu) { Good "$gpu" }
-else { Warn "No NVIDIA GPU detected — transcription and rendering will use the CPU." }
+else { Warn "No NVIDIA GPU detected - transcription and rendering will use the CPU." }
 
 # --------------------------------------------------------------------------
 Say "Building the Python environment"
@@ -136,20 +145,56 @@ if (-not (Test-Path "$Root\.venv")) { & $python -m venv .venv }
 $py = "$Root\.venv\Scripts\python.exe"
 
 & $py -m pip install --upgrade pip --quiet
-& $py -m pip install --quiet pillow numpy
+Pip "Installing Pillow and numpy" @("install", "--quiet", "pillow", "numpy")
 
 if ($gpu) {
-    Say "Installing PyTorch with CUDA (large download — this takes a while)"
-    & $py -m pip install --quiet torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-    Say "Installing Whisper, Demucs and EasyOCR"
-    & $py -m pip install --quiet openai-whisper demucs easyocr
+    # The CUDA wheel index has to suit the Python version as well as the
+    # driver. cu121 publishes nothing for Python 3.13, and when it 404s pip
+    # silently falls back to PyPI, whose Windows torch is CPU-only - so the
+    # install "succeeds" with no GPU at all. Newer indexes are tried first and
+    # each is verified before being accepted.
+    $pyver = & $py -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    Write-Host "    Python $pyver, choosing a CUDA wheel index to match"
+
+    $ok = $false
+    foreach ($cu in @("cu126", "cu124", "cu121")) {
+        Say "Trying PyTorch $cu (large download)"
+        & $py -m pip install --quiet torch torchaudio `
+              --index-url "https://download.pytorch.org/whl/$cu"
+        if ($LASTEXITCODE -ne 0) { Warn "$cu has no wheels for Python $pyver"; continue }
+
+        $built = & $py -c "import torch; print(torch.version.cuda or 'none')" 2>$null
+        if ($built -and $built -ne "none") {
+            Good "torch with CUDA $built ($cu)"
+            $ok = $true
+            break
+        }
+        Warn "$cu resolved to a CPU-only build; trying the next index"
+        & $py -m pip uninstall -y torch torchaudio --quiet 2>$null
+    }
+
+    if (-not $ok) {
+        Fail ("Could not install a CUDA build of torch for Python $pyver. " +
+              "Python 3.12 has the widest wheel coverage - install it, delete " +
+              "the .venv folder, and run this again.")
+    }
+
+    Pip "Installing Whisper, Demucs and EasyOCR" `
+        @("install", "--quiet", "openai-whisper", "demucs", "easyocr")
+
+    # torchaudio is what Demucs needs, and it is the piece most likely to have
+    # been dropped by a fallback.
+    & $py -c "import torch, torchaudio; assert torch.cuda.is_available()" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Fail "torch/torchaudio installed but CUDA is not available. Check the driver."
+    }
+    Good "CUDA confirmed working"
 } else {
     Say "Installing CPU-only Whisper and Demucs"
-    & $py -m pip install --quiet torch torchaudio
-    & $py -m pip install --quiet openai-whisper demucs
-    Warn "Without a GPU, EasyOCR is skipped; Tesseract would be needed for"
-    Warn "reading lyrics off a video. Install it with:"
-    Warn "  winget install UB-Mannheim.TesseractOCR"
+    Pip "Installing torch" @("install", "--quiet", "torch", "torchaudio")
+    Pip "Installing Whisper and Demucs" @("install", "--quiet", "openai-whisper", "demucs")
+    Warn "Without a GPU, EasyOCR is skipped; Tesseract is needed to read"
+    Warn "lyrics off a video:  winget install UB-Mannheim.TesseractOCR"
 }
 Pop-Location
 
@@ -174,21 +219,15 @@ $taskName = "Hopewell Lyric Video Worker"
 $logDir = "$Root\work\logs"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
-# Launch through run-hidden.vbs when this machine provides it, so nothing can
-# flash a console window during a service.
-$hidden = Join-Path (Split-Path -Parent $Root) "tools\run-hidden.vbs"
-if (-not (Test-Path $hidden)) { $hidden = Join-Path $Root "tools\run-hidden.vbs" }
-
-if (Test-Path $hidden) {
-    Good "using run-hidden.vbs so no window can appear"
-    $action = New-ScheduledTaskAction -Execute "wscript.exe" `
-        -Argument "`"$hidden`" `"$py`" `"$Root\worker\worker.py`"" `
-        -WorkingDirectory $Root
-} else {
-    $action = New-ScheduledTaskAction -Execute "cmd.exe" `
-        -Argument "/c `"`"$py`" `"$Root\worker\worker.py`" >> `"$logDir\worker.log`" 2>&1`"" `
-        -WorkingDirectory $Root
-}
+# Always cmd.exe, deliberately, despite the usual rule against pointing a
+# scheduled task at it. The task runs as SYSTEM in session 0, which has no
+# interactive desktop, so no console window can appear during a service no
+# matter what is launched. A wscript/vbs wrapper was tried and removed: it
+# guarantees nothing extra here and writes no log, which would leave the
+# worker undebuggable the first time something went wrong on a Sunday.
+$action = New-ScheduledTaskAction -Execute "cmd.exe" `
+    -Argument "/c `"`"$py`" `"$Root\worker\worker.py`" >> `"$logDir\worker.log`" 2>&1`"" `
+    -WorkingDirectory $Root
 
 $trigger  = New-ScheduledTaskTrigger -AtStartup
 $settings = New-ScheduledTaskSettingsSet `
@@ -199,16 +238,20 @@ $settings = New-ScheduledTaskSettingsSet `
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 # SYSTEM, not the signed-in user: there is no auto-login here, so a task tied
 # to the interactive session would sit idle after a restart until someone
-# signed in — which might not happen until Sunday.
+# signed in - which might not happen until Sunday.
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger `
     -Settings $settings -RunLevel Highest -User "SYSTEM" | Out-Null
-Good "registered '$taskName' — starts at boot, no sign-in needed, restarts on failure"
+Good "registered '$taskName' - starts at boot, no sign-in needed, restarts on failure"
 
 # --------------------------------------------------------------------------
 Say "Testing the connection"
 & $py "$Root\worker\worker.py" --url $Url --token $Token --sunday-dir $SundayDir --once
-if ($LASTEXITCODE -eq 0) { Good "connection OK" }
-else { Warn "That test did not succeed — check the URL and token above." }
+if ($LASTEXITCODE -ne 0) {
+    Fail ("The worker could not reach the dashboard, or crashed on startup. " +
+          "The scheduled task is registered but NOT started, so nothing will " +
+          "crash-loop. Fix the problem and re-run this script.")
+}
+Good "connection OK"
 
 Say "Done"
 Write-Host @"

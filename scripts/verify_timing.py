@@ -36,6 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from engine.lyrics import LyricTrack  # noqa: E402
+from engine import tools  # noqa: E402
 from engine.ocr import native_fps, probe_size, text_mask  # noqa: E402
 
 #: Fraction of settled ink that counts as "readable". Deliberately the same
@@ -54,7 +55,7 @@ def read_window(video: Path, start: float, duration: float, size: tuple):
     w, h = size
     frame_bytes = w * h * 3
     proc = subprocess.Popen(
-        [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error",
+        [tools.ffmpeg(), "-hide_banner", "-loglevel", "error",
          "-ss", f"{max(0.0, start - 2.0):.3f}", "-i", str(video),
          "-ss", f"{min(2.0, start):.3f}", "-t", f"{duration:.3f}",
          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],

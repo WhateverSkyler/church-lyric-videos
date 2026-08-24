@@ -38,10 +38,10 @@ FADE = 0.42
 
 
 def _ffmpeg() -> str:
-    exe = shutil.which("ffmpeg")
-    if not exe:
-        raise RuntimeError("ffmpeg not found on PATH. Install it and re-run.")
-    return exe
+    # Resolved through tools, never PATH. A SYSTEM scheduled task does not
+    # inherit a user's PATH, so shutil.which() returns None there and every
+    # render fails even though ffmpeg is installed.
+    return tools.ffmpeg()
 
 
 def available_encoders() -> set:
