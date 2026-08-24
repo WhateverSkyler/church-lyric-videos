@@ -21,6 +21,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from . import tools
 from .brand import LOGO_HORIZONTAL, hex_to_rgb
 from .lyrics import LyricLine
 from .themes import Theme
@@ -113,7 +114,7 @@ def pick_encoder(prefer: str | None = None, allow_hardware: bool = True) -> tupl
 
 def probe_duration(path: Path) -> float:
     """Duration of a media file in seconds."""
-    exe = shutil.which("ffprobe") or "ffprobe"
+    exe = tools.ffprobe()
     out = subprocess.run(
         [exe, "-v", "error", "-show_entries", "format=duration",
          "-of", "json", str(path)],

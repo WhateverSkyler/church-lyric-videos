@@ -37,6 +37,8 @@ sys.path.insert(0, str(ROOT))
 
 from engine.lyrics import LyricTrack  # noqa: E402
 from engine.pipeline import Job, Source, Stage, prepare, render  # noqa: E402
+from engine.render import probe_duration  # noqa: E402
+from worker import guard  # noqa: E402
 
 POLL_SECONDS = 6.0
 #: Progress is pushed at most this often, to keep the VPS's tiny database calm.
@@ -175,13 +177,16 @@ def load_env() -> None:
 
 
 class Worker:
-    def __init__(self, api: Dashboard, workroot: Path, sunday_dir: Path):
+    def __init__(self, api: Dashboard, workroot: Path, sunday_dir: Path,
+                 respect_services: bool = True):
         self.api = api
         self.workroot = workroot
         self.sunday_dir = sunday_dir
+        self.respect_services = respect_services
         self.workroot.mkdir(parents=True, exist_ok=True)
         self.sunday_dir.mkdir(parents=True, exist_ok=True)
         self._last_beat = 0.0
+        self._held_reason = ""
 
     def _progress(self, job_id: str):
         def report(stage: str, n: int, total: int):
@@ -270,8 +275,38 @@ class Worker:
             audio = candidates[0]
         job.audio_path = str(audio)
 
+        verdict = guard.check() if self.respect_services else guard.Verdict(True, "guard off")
+        if verdict.broadcast_running or verdict.low_priority:
+            # Never outrank a live stream for CPU. The renders that matter are
+            # queued days ahead; the service is happening now.
+            guard.lower_own_priority()
+            log(f"  {verdict.describe()}")
+
+        # Refuse to START work that would still be encoding when a service
+        # begins. Finishing late is worse than starting late.
+        if self.respect_services:
+            try:
+                song = probe_duration(Path(job.audio_path))
+                estimate = guard.estimate_seconds(
+                    song, hardware=not verdict.force_software)
+                from datetime import datetime
+
+                crossing = guard.would_cross_window(datetime.now(), estimate)
+            except Exception:
+                crossing = None
+            if crossing is not None:
+                log(f"  deferring — this render would still be going during "
+                    f"{crossing.label}")
+                self.api.update(job.id, stage="approved", claimed_by="",
+                                claimed_at=0, progress="",
+                                notes=(row.get("notes", "") +
+                                       f"\nheld back so it would not run into "
+                                       f"{crossing.label}").strip())
+                return
+
         out_dir = workdir / "out"
-        job = render(job, out_dir, self._progress(job.id))
+        job = render(job, out_dir, self._progress(job.id),
+                     force_software=verdict.force_software)
         if job.stage == Stage.FAILED:
             log(f"  render failed: {job.error}")
             self.api.update(job.id, stage="failed", error=job.error)
@@ -297,6 +332,16 @@ class Worker:
     def run_forever(self) -> None:
         idle_logged = False
         while True:
+            if self.respect_services:
+                verdict = guard.check()
+                if not verdict.safe:
+                    if self._held_reason != verdict.reason:
+                        self._held_reason = verdict.reason
+                        log(guard.summary())
+                    time.sleep(60)
+                    continue
+                self._held_reason = ""
+
             try:
                 row = self.api.claim()
             except urllib.error.HTTPError as exc:
@@ -339,6 +384,9 @@ def main() -> int:
     ap.add_argument("--work-dir", default=str(ROOT / "work" / "worker"))
     ap.add_argument("--name", default=f"{platform.node() or 'church-pc'}")
     ap.add_argument("--once", action="store_true", help="handle one job and exit")
+    ap.add_argument("--ignore-services", action="store_true",
+                    help="render even during a service. Stream protections "
+                         "(software encoding, low priority) still apply.")
     args = ap.parse_args()
 
     if not args.url or not args.token:
@@ -350,9 +398,11 @@ def main() -> int:
     log(f"GPU: {describe_gpu()}")
     log(f"dashboard: {args.url}")
     log(f"finished videos: {args.sunday_dir}")
+    log(guard.summary())
 
     api = Dashboard(args.url, args.token, args.name)
-    worker = Worker(api, Path(args.work_dir), Path(args.sunday_dir))
+    worker = Worker(api, Path(args.work_dir), Path(args.sunday_dir),
+                    respect_services=not args.ignore_services)
 
     if args.once:
         row = api.claim()

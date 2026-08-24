@@ -27,6 +27,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import tools
 from .lyrics import LyricLine, LyricTrack
 
 #: Frames per second to sweep. Lyric cards last seconds, so 4/s locates a
@@ -118,7 +119,7 @@ def similar(a: np.ndarray, b: np.ndarray, tol: float = 0.30) -> bool:
 
 def probe_size(video: Path) -> tuple:
     out = subprocess.run(
-        [shutil.which("ffprobe") or "ffprobe", "-v", "error",
+        [tools.ffprobe(), "-v", "error",
          "-select_streams", "v:0", "-show_entries", "stream=width,height",
          "-of", "csv=p=0:s=x", str(video)],
         capture_output=True, text=True)
@@ -134,7 +135,7 @@ def sweep(video: Path, fps: float = SWEEP_FPS, progress=None):
     w, h = probe_size(video)
     frame_bytes = w * h * 3
     proc = subprocess.Popen(
-        [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error",
+        [tools.ffmpeg(), "-hide_banner", "-loglevel", "error",
          "-i", str(video), "-vf", f"fps={fps}",
          "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -177,7 +178,7 @@ class Segment:
 
 def native_fps(video: Path) -> float:
     out = subprocess.run(
-        [shutil.which("ffprobe") or "ffprobe", "-v", "error",
+        [tools.ffprobe(), "-v", "error",
          "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
          "-of", "csv=p=0", str(video)],
         capture_output=True, text=True)
@@ -193,7 +194,7 @@ def _window_frames(video: Path, start: float, duration: float, size: tuple):
     w, h = size
     frame_bytes = w * h * 3
     proc = subprocess.Popen(
-        [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error",
+        [tools.ffmpeg(), "-hide_banner", "-loglevel", "error",
          # -ss before -i seeks by keyframe (fast), then -ss after trims exactly.
          "-ss", f"{max(0.0, start - 2.0):.3f}", "-i", str(video),
          "-ss", f"{min(2.0, start):.3f}", "-t", f"{duration:.3f}",

@@ -30,6 +30,7 @@ from pathlib import Path
 import numpy as np
 
 from . import footage as footage_mod
+from . import tools
 from .anim import Transform
 from .lyrics import LyricLine
 from . import splash
@@ -180,7 +181,7 @@ class FootageSource:
               f"format=rgb24")
 
         self.proc = subprocess.Popen(
-            [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error",
+            [tools.ffmpeg(), "-hide_banner", "-loglevel", "error",
              "-stream_loop", "-1", "-i", str(path),
              "-vf", vf, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -417,10 +418,15 @@ def render_animated(theme: Theme, lines: list, audio: Path, out: Path,
                     frame: tuple = FRAME, fps: int = FPS,
                     encoder: str | None = None, title: str | None = None,
                     clip_seed: int = 0, use_footage: bool = True,
-                    progress=None) -> Result:
-    """Render a fully animated lyric video."""
+                    force_software: bool = False, progress=None) -> Result:
+    """Render a fully animated lyric video.
+
+    `force_software` blocks the GPU encoder. The worker sets it whenever a
+    broadcast tool is running, because the card's simultaneous NVENC sessions
+    are finite and a livestream must never lose one to a render.
+    """
     duration = probe_duration(audio)
-    enc, quality = pick_encoder(encoder)
+    enc, quality = pick_encoder(encoder, allow_hardware=not force_software)
     animation = animation or theme.animation
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -460,7 +466,7 @@ def render_animated(theme: Theme, lines: list, audio: Path, out: Path,
                       title=title or "")
 
     # --- encoder ----------------------------------------------------------
-    cmd = [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+    cmd = [tools.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
            "-f", "rawvideo", "-pix_fmt", "rgb24",
            "-s", f"{frame[0]}x{frame[1]}", "-r", str(fps), "-i", "-",
            "-i", str(audio),

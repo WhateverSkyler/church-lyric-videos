@@ -31,6 +31,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import tools
 from .lyrics import LyricLine, LyricTrack
 
 SAMPLE_RATE = 16000
@@ -47,7 +48,7 @@ FEATURE_FPS = 20
 def load_mono(path: Path, sr: int = SAMPLE_RATE) -> np.ndarray:
     """Decode any media file to a mono float32 waveform."""
     proc = subprocess.run(
-        [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error",
+        [tools.ffmpeg(), "-hide_banner", "-loglevel", "error",
          "-i", str(path), "-vn", "-ac", "1", "-ar", str(sr),
          "-f", "f32le", "-"],
         capture_output=True)

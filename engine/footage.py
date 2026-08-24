@@ -30,6 +30,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from . import tools
 from .brand import ASSETS
 
 LIBRARY = ASSETS / "footage"
@@ -237,7 +238,7 @@ def source_luma(path: Path, samples: int = 5) -> float:
     duration = 0.0
     try:
         out = subprocess.run(
-            [shutil.which("ffprobe") or "ffprobe", "-v", "error",
+            [tools.ffprobe(), "-v", "error",
              "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
             capture_output=True, text=True)
         duration = float(out.stdout.strip() or 0)
@@ -250,7 +251,7 @@ def source_luma(path: Path, samples: int = 5) -> float:
     for i in range(samples):
         ts = (duration * (i + 0.5) / samples) if duration > 0 else i
         r = subprocess.run(
-            [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error",
+            [tools.ffmpeg(), "-hide_banner", "-loglevel", "error",
              "-y", "-ss", f"{ts:.2f}", "-i", str(path), "-frames:v", "1",
              "-vf", "scale=160:-2", str(tmp)],
             capture_output=True, text=True)
@@ -364,7 +365,7 @@ def prepare(clip: Clip, target_luma: float = 78.0, saturation: float = 0.85,
         maps = []
         trim_args = ["-t", f"{seconds:.2f}"] if seconds else []
 
-    cmd = [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error",
+    cmd = [tools.ffmpeg(), "-hide_banner", "-loglevel", "error",
            "-y", "-i", str(src), *graph, *maps, "-an", *trim_args,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
            "-pix_fmt", "yuv420p", str(dest)]

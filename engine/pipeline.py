@@ -23,6 +23,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from . import tools
 from .lyrics import LyricTrack
 
 
@@ -112,11 +113,8 @@ def fetch(ref: str, workdir: Path, audio_only: bool = False,
             raise FileNotFoundError(f"source not found: {ref}")
         return path
 
-    if not shutil.which("yt-dlp"):
-        raise RuntimeError("yt-dlp not found on PATH; needed to fetch URLs.")
-
     template = str(workdir / "%(id)s.%(ext)s")
-    cmd = ["yt-dlp", "--no-playlist", "-o", template, "--print", "after_move:filepath"]
+    cmd = [tools.yt_dlp(), "--no-playlist", "-o", template, "--print", "after_move:filepath"]
     if audio_only:
         cmd += ["-f", "bestaudio/best", "-x", "--audio-format", "m4a"]
     else:
@@ -147,7 +145,7 @@ def extract_audio(media: Path, out: Path) -> Path:
     """Pull a clean audio track out of whatever was fetched."""
     out.parent.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
-        [shutil.which("ffmpeg") or "ffmpeg", "-hide_banner", "-loglevel", "error",
+        [tools.ffmpeg(), "-hide_banner", "-loglevel", "error",
          "-y", "-i", str(media), "-vn", "-c:a", "aac", "-b:a", "256k", str(out)],
         capture_output=True, text=True)
     if proc.returncode != 0:
@@ -224,7 +222,7 @@ def prepare(job: Job, workdir: Path, progress=None) -> Job:
 
 
 def render(job: Job, out_dir: Path, progress=None,
-           use_footage: bool = True) -> Job:
+           use_footage: bool = True, force_software: bool = False) -> Job:
     """Render the approved lyrics. Expects the job to have passed REVIEW."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -263,6 +261,7 @@ def render(job: Job, out_dir: Path, progress=None,
             title=apply_to_title(job.title or track.title, job.transpose),
             clip_seed=abs(hash(job.id)) % 997,
             use_footage=use_footage,
+            force_software=force_software,
             progress=progress,
         )
         job.output_path = str(result.path)

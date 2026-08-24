@@ -23,11 +23,11 @@ Two ways to do the shift, in order of preference:
 
 from __future__ import annotations
 
-import math
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from . import tools
 
 #: Practical limit. Beyond about a fourth in either direction the artefacts
 #: are audible enough that re-recording the track is the better answer.
@@ -66,10 +66,10 @@ def describe(semitones: int) -> str:
 
 
 def _ffmpeg() -> str:
-    exe = shutil.which("ffmpeg")
-    if not exe:
-        raise TransposeError("ffmpeg not found on PATH")
-    return exe
+    try:
+        return tools.ffmpeg()
+    except RuntimeError as exc:
+        raise TransposeError(str(exc)) from exc
 
 
 def have_rubberband() -> bool:
@@ -80,7 +80,7 @@ def have_rubberband() -> bool:
 
 
 def duration_of(path: Path) -> float:
-    exe = shutil.which("ffprobe") or "ffprobe"
+    exe = tools.ffprobe()
     out = subprocess.run(
         [exe, "-v", "error", "-show_entries", "format=duration",
          "-of", "csv=p=0", str(path)], capture_output=True, text=True)
@@ -120,7 +120,7 @@ def source_rate(path: Path) -> int:
     early version assumed 48 kHz against 44.1 kHz material and every transpose
     came out 2.75 s short on a 34 s track, regardless of the interval.
     """
-    exe = shutil.which("ffprobe") or "ffprobe"
+    exe = tools.ffprobe()
     out = subprocess.run(
         [exe, "-v", "error", "-select_streams", "a:0",
          "-show_entries", "stream=sample_rate", "-of", "csv=p=0", str(path)],
