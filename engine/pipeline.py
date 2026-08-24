@@ -61,6 +61,10 @@ class Job:
     #: Phase 2 only: the original recording, used purely to borrow timings.
     original_ref: str = ""
     theme: str = "cinematic-warm"
+    #: Semitones to shift the key by; 0 leaves the track alone. The shift is
+    #: applied to the audio only — never the tempo — so the lyric cues stay
+    #: valid, and it is verified to the sample before the render begins.
+    transpose: int = 0
     stage: Stage = Stage.QUEUED
     error: str = ""
     #: Set once prepare() has run; the words awaiting or past review.
@@ -230,19 +234,33 @@ def render(job: Job, out_dir: Path, progress=None,
     try:
         from .compositor import render_animated
         from .themes import get as get_theme
+        from .transpose import apply_to_title, label, transpose as shift_key
 
         track = LyricTrack.load(Path(job.lyrics_path))
         theme = get_theme(job.theme)
         # Re-record which theme actually ran, so a "random" pick is reproducible.
         job.theme = theme.key
 
+        audio = Path(job.audio_path)
+        if job.transpose:
+            # Shift the key before rendering, and let a failed length check
+            # abort the whole job — shipping a track whose length moved would
+            # walk every lyric cue out of step with the music.
+            shifted = audio.with_name(f"{audio.stem}{label(job.transpose)}.m4a")
+            result_shift = shift_key(audio, shifted, job.transpose)
+            audio = result_shift.path
+            job.notes = (job.notes + f"\nkey: {label(job.transpose)} "
+                         f"({result_shift.method}, "
+                         f"{result_shift.drift * 1000:+.0f} ms)").strip()
+
         safe = "".join(c if c.isalnum() or c in " -_" else "" for c in
                        (job.title or job.id)).strip() or job.id
+        safe = apply_to_title(safe, job.transpose)
         out = out_dir / f"{safe} - {theme.name}.mp4"
 
         result = render_animated(
-            theme, track.lines, Path(job.audio_path), out,
-            title=job.title or track.title,
+            theme, track.lines, audio, out,
+            title=apply_to_title(job.title or track.title, job.transpose),
             clip_seed=abs(hash(job.id)) % 997,
             use_footage=use_footage,
             progress=progress,

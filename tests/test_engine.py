@@ -190,12 +190,27 @@ def test_stagger_cannot_outrun_the_line():
     assert tf.opacity > 0.05, "final word never becomes visible"
 
 
-def test_words_arrive_in_order():
-    anim = PRESETS["lift"]
-    t = 0.30
-    first = anim.transform_for(0, 6, t, 5.0).opacity
-    last = anim.transform_for(5, 6, t, 5.0).opacity
-    assert first > last, "words should arrive first-to-last"
+def test_a_line_arrives_as_one_unit():
+    """No preset may stagger words. A reader cannot take in a line until its
+    last word lands, so staggering delays comprehension of every line — and it
+    stretches the entrance far enough that cues land late on cards that butt
+    together (measured at 433 ms worst case before this was removed)."""
+    for key, anim in PRESETS.items():
+        assert anim.stagger == 0.0, f"{key} staggers words"
+        first = anim.transform_for(0, 6, 0.25, 5.0)
+        last = anim.transform_for(5, 6, 0.25, 5.0)
+        assert first.opacity == pytest.approx(last.opacity, abs=1e-6), key
+
+
+def test_type_is_legible_well_before_its_entrance_finishes():
+    """Opacity must outrun the motion, or a line reads as arriving late."""
+    for key, anim in PRESETS.items():
+        readable = anim.readable_lead_in(5, 6.0)
+        settled = anim.total_lead_in(5, 6.0)
+        assert readable < settled, f"{key} is only legible once it stops moving"
+        # At the point we call it readable, it must actually be mostly opaque.
+        tf = anim.transform_for(0, 5, readable, 6.0)
+        assert tf.opacity > 0.55, f"{key} only {tf.opacity:.2f} opaque at its cue"
 
 
 def test_every_theme_has_a_usable_animation_and_mood():

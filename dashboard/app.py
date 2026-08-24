@@ -34,6 +34,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from dashboard.store import Store  # noqa: E402
+from dashboard.validate import (check_lyrics, check_new_song,  # noqa: E402
+                                Errors)
 
 # Absolute, always. Flask's send_from_directory resolves a relative directory
 # against the app root (dashboard/), so a relative HOPEWELL_DATA uploads files
@@ -100,6 +102,20 @@ def themes_list() -> list:
     return _THEMES_CACHE
 
 
+#: The only key changes offered. Beyond a fourth either way the artefacts
+#: are audible enough that a differently-keyed track is the better answer.
+TRANSPOSE_CHOICES = list(range(-5, 6))
+
+
+def transpose_value(raw, fallback: int = 0) -> int:
+    """Read a key change off a form, clamped to what is actually offered."""
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return fallback
+    return value if value in TRANSPOSE_CHOICES else fallback
+
+
 def current_user() -> str:
     """Whoever nginx authenticated, when it passes the name through."""
     return (request.headers.get("X-Forwarded-User")
@@ -121,40 +137,28 @@ def index():
              "expired": 5}
     jobs.sort(key=lambda j: (order.get(j["stage"], 9), -j["created_at"]))
     return render_template("index.html", jobs=jobs, counts=store.counts(),
-                           themes=themes_list())
+                           themes=themes_list(), transposes=TRANSPOSE_CHOICES)
 
 
 @app.get("/new")
 def new_job_form():
-    return render_template("new.html", themes=themes_list())
+    return render_template("new.html", themes=themes_list(),
+                           transposes=TRANSPOSE_CHOICES,
+                           errors=Errors(), values={})
 
 
 @app.post("/new")
 def create_job():
-    form = request.form
-    source_ref = (form.get("source_ref") or "").strip()
-    if not source_ref:
+    values, errors = check_new_song(request.form, store.list(limit=200),
+                                    TRANSPOSE_CHOICES)
+    if errors:
+        # Everything typed is handed straight back, so nobody has to retype a
+        # link on a phone because one field was wrong.
         return render_template("new.html", themes=themes_list(),
-                               error="Paste a link to the song first."), 400
+                               transposes=TRANSPOSE_CHOICES,
+                               errors=errors, values=values), 400
 
-    source = form.get("source", "lyric_video")
-    original_ref = (form.get("original_ref") or "").strip()
-    if source == "instrumental" and not original_ref:
-        return render_template(
-            "new.html", themes=themes_list(),
-            error="For an instrumental, also paste a link to the original "
-                  "recording with vocals — that is where the timings come from."), 400
-
-    job_id = store.create(
-        title=(form.get("title") or "").strip(),
-        artist=(form.get("artist") or "").strip(),
-        source=source,
-        source_ref=source_ref,
-        original_ref=original_ref,
-        theme=form.get("theme", "cinematic-warm"),
-        requested_by=current_user(),
-        stage="queued",
-    )
+    job_id = store.create(requested_by=current_user(), stage="queued", **values)
     return redirect(url_for("job_detail", job_id=job_id))
 
 
@@ -163,7 +167,8 @@ def job_detail(job_id: str):
     job = store.get(job_id)
     if not job:
         abort(404)
-    return render_template("job.html", job=job, themes=themes_list())
+    return render_template("job.html", job=job, themes=themes_list(),
+                           transposes=TRANSPOSE_CHOICES, errors=Errors())
 
 
 @app.post("/job/<job_id>/approve")
@@ -173,11 +178,29 @@ def approve(job_id: str):
         abort(404)
     if job["stage"] != "review":
         return redirect(url_for("job_detail", job_id=job_id))
+
+    lyrics, _count, errors = check_lyrics(request.form.get("lyrics", job["lyrics"]))
+    title = (request.form.get("title") or job["title"]).strip()
+    if not title:
+        errors.add("title", "Give the song a name so everyone can find it later.")
+
+    if errors:
+        # Show the edited text back, not the stored copy, or corrections are lost.
+        job = dict(job, lyrics=lyrics, title=title,
+                   theme=request.form.get("theme", job["theme"]),
+                   transpose=transpose_value(request.form.get("transpose"),
+                                             job["transpose"]))
+        return render_template("job.html", job=job, themes=themes_list(),
+                               transposes=TRANSPOSE_CHOICES, errors=errors), 400
+
     store.update(job_id,
-                 lyrics=request.form.get("lyrics", job["lyrics"]),
+                 lyrics=lyrics,
                  theme=request.form.get("theme", job["theme"]),
-                 title=(request.form.get("title") or job["title"]).strip(),
-                 stage="approved", claimed_by="", claimed_at=0, progress="")
+                 transpose=transpose_value(request.form.get("transpose"),
+                                           job["transpose"]),
+                 title=title,
+                 stage="approved", claimed_by="", claimed_at=0, progress="",
+                 error="")
     return redirect(url_for("job_detail", job_id=job_id))
 
 
@@ -265,7 +288,7 @@ def api_update(job_id: str):
     if not store.get(job_id):
         abort(404)
     allowed = {"stage", "error", "notes", "lyrics", "title", "artist",
-               "alignment_confidence", "theme", "progress"}
+               "alignment_confidence", "theme", "progress", "transpose"}
     fields = {k: v for k, v in (request.json or {}).items() if k in allowed}
     if fields:
         store.update(job_id, **fields)

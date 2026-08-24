@@ -208,6 +208,7 @@ class Worker:
             source_ref=row.get("source_ref", ""),
             original_ref=row.get("original_ref", ""),
             theme=row.get("theme", "cinematic-warm"),
+            transpose=int(row.get("transpose") or 0),
         )
 
         if stage in ("fetching", "extracting"):

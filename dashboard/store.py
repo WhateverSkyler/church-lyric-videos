@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     source_ref    TEXT NOT NULL DEFAULT '',
     original_ref  TEXT NOT NULL DEFAULT '',
     theme         TEXT NOT NULL DEFAULT 'cinematic-warm',
+    transpose     INTEGER NOT NULL DEFAULT 0,
     stage         TEXT NOT NULL DEFAULT 'queued',
     error         TEXT NOT NULL DEFAULT '',
     notes         TEXT NOT NULL DEFAULT '',
@@ -53,12 +54,25 @@ CLAIMABLE = {"queued": "fetching", "approved": "rendering"}
 STALE_CLAIM_SECONDS = 45 * 60
 
 
+#: Columns added after the first release. CREATE TABLE IF NOT EXISTS does
+#: nothing to a database that already exists, so a new column has to be added
+#: explicitly or an upgraded dashboard fails on every query against a queue
+#: that predates it.
+MIGRATIONS = (
+    ("transpose", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+
 class Store:
     def __init__(self, path: Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as c:
             c.executescript(SCHEMA)
+            existing = {r["name"] for r in c.execute("PRAGMA table_info(jobs)")}
+            for column, spec in MIGRATIONS:
+                if column not in existing:
+                    c.execute(f"ALTER TABLE jobs ADD COLUMN {column} {spec}")
 
     @contextmanager
     def _conn(self):

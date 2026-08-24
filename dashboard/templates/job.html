@@ -71,19 +71,45 @@
       <p class="muted">Timing confidence: {{ '%.0f'|format(job.alignment_confidence * 100) }}%</p>
     {% endif %}
 
+    {% if errors %}
+      <div class="err"><b>That can't be saved yet.</b> See the note below.</div>
+    {% endif %}
+
     <label for="title2">Song name</label>
-    <input type="text" id="title2" name="title" value="{{ job.title }}">
+    <input type="text" id="title2" name="title" required maxlength="120"
+           class="{{ 'bad' if errors.get('title') }}" value="{{ job.title }}">
+    {% if errors.get('title') %}<div class="fielderr">{{ errors.get('title') }}</div>{% endif %}
 
     <div class="row" style="margin:.9rem 0 .3rem">
       <label for="lyrics" style="margin:0" class="grow">Words and timing</label>
       <a class="btn alt" href="{{ url_for('tap', job_id=job.id) }}">Re-time by tapping</a>
     </div>
-    <textarea id="lyrics" name="lyrics" spellcheck="true">{{ job.lyrics }}</textarea>
+    <textarea id="lyrics" name="lyrics" spellcheck="true"
+              class="{{ 'bad' if errors.get('lyrics') }}">{{ job.lyrics }}</textarea>
+    {% if errors.get('lyrics') %}<div class="fielderr">{{ errors.get('lyrics') }}</div>{% endif %}
     <div class="hint">
       Each line starts with when it appears and when it disappears, like
       <code>[00:12.40 -&gt; 00:16.80]</code>. Change the words freely.
       To split a line across two rows on screen, put the second row underneath,
       indented — leave the timing alone.
+    </div>
+
+
+    <label for="transpose">Key</label>
+    <select id="transpose" name="transpose">
+      {% for st in transposes %}
+      <option value="{{ st }}" {{ 'selected' if st == (job.transpose or 0)|int }}>
+        {% if st == 0 %}Original key — no change
+        {% elif st > 0 %}Up {{ st }} semitone{{ 's' if st != 1 }}  ({{ '+%d'|format(st) }})
+        {% else %}Down {{ -st }} semitone{{ 's' if st != -1 }}  ({{ st }})
+        {% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    <div class="hint">
+      Only changes the pitch — the song plays at exactly the same speed, so the
+      words still land on the right beat. The change is written into the file
+      name, e.g. <code>Song Name (+2)</code>.
     </div>
 
     <label>Look</label>

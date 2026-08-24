@@ -4,22 +4,33 @@
 
 <h1>Add a song</h1>
 
-{% if error %}<div class="err">{{ error }}</div>{% endif %}
+{% if errors %}
+<div class="err">
+  <b>{{ 'One thing needs' if errors.fields|length == 1 else 'A few things need' }} fixing
+  before this can be added.</b> Everything you typed is still here.
+</div>
+{% endif %}
 
 <form method="post" action="{{ url_for('create_job') }}">
 <div class="card">
 
   <label for="title">Song name</label>
-  <input type="text" id="title" name="title" placeholder="e.g. Great Is Thy Faithfulness"
-         value="{{ request.form.title or '' }}">
+  <input type="text" id="title" name="title" required maxlength="120"
+         class="{{ 'bad' if errors.get('title') }}"
+         placeholder="e.g. Great Is Thy Faithfulness"
+         value="{{ values.get('title', '') }}">
+  {% if errors.get('title') %}<div class="fielderr">{{ errors.get('title') }}</div>{% endif %}
 
   <label for="artist">Artist <span class="muted">(optional)</span></label>
-  <input type="text" id="artist" name="artist" value="{{ request.form.artist or '' }}">
+  <input type="text" id="artist" name="artist" maxlength="120"
+         placeholder="Leave blank if you're not sure"
+         value="{{ values.get('artist', '') }}">
 
   <label>What are you starting from?</label>
   <div class="themegrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
     <label>
-      <input type="radio" name="source" value="lyric_video" checked
+      <input type="radio" name="source" value="lyric_video"
+             {{ 'checked' if values.get('source', 'lyric_video') != 'instrumental' }}
              onchange="document.getElementById('orig').style.display='none'">
       <div class="tile">
         <span class="mood">Most of the time</span>
@@ -31,6 +42,7 @@
     </label>
     <label>
       <input type="radio" name="source" value="instrumental"
+             {{ 'checked' if values.get('source') == 'instrumental' }}
              onchange="document.getElementById('orig').style.display='block'">
       <div class="tile">
         <span class="mood">Harder</span>
@@ -43,15 +55,42 @@
 
   <label for="source_ref">Link to the track</label>
   <input type="url" id="source_ref" name="source_ref" required
+         class="{{ 'bad' if errors.get('source_ref') }}"
          placeholder="https://www.youtube.com/watch?v=..."
-         value="{{ request.form.source_ref or '' }}">
-  <div class="hint">A YouTube link is fine. This is the audio the finished video will use.</div>
+         value="{{ values.get('source_ref', '') }}">
+  {% if errors.get('source_ref') %}
+    <div class="fielderr">{{ errors.get('source_ref') }}</div>
+  {% else %}
+    <div class="hint">Paste a YouTube link. This is the audio the finished video will use.</div>
+  {% endif %}
 
-  <div id="orig" style="display:none">
+
+  <label for="transpose">Key</label>
+  <select id="transpose" name="transpose">
+    {% for st in transposes %}
+    <option value="{{ st }}" {{ 'selected' if st == values.get('transpose', 0) }}>
+      {% if st == 0 %}Original key — no change
+      {% elif st > 0 %}Up {{ st }} semitone{{ 's' if st != 1 }}  ({{ '+%d'|format(st) }})
+      {% else %}Down {{ -st }} semitone{{ 's' if st != -1 }}  ({{ st }})
+      {% endif %}
+    </option>
+    {% endfor %}
+  </select>
+  <div class="hint">
+    Only changes the pitch — the song plays at exactly the same speed, so the
+    words still land on the right beat. The change is written into the file
+    name, e.g. <code>Song Name (+2)</code>.
+  </div>
+
+  <div id="orig" style="display:{{ 'block' if values.get('source') == 'instrumental' else 'none' }}">
     <label for="original_ref">Link to the original recording (with singing)</label>
     <input type="url" id="original_ref" name="original_ref"
+           class="{{ 'bad' if errors.get('original_ref') }}"
            placeholder="https://www.youtube.com/watch?v=..."
-           value="{{ request.form.original_ref or '' }}">
+           value="{{ values.get('original_ref', '') }}">
+    {% if errors.get('original_ref') %}
+      <div class="fielderr">{{ errors.get('original_ref') }}</div>
+    {% endif %}
     <div class="hint">
       Only used to work out <em>when</em> each line is sung. The finished video
       still uses the instrumental you linked above.
@@ -68,7 +107,8 @@
   <div class="themegrid">
     {% for t in themes %}
     <label>
-      <input type="radio" name="theme" value="{{ t.key }}" {{ 'checked' if loop.first }}>
+      <input type="radio" name="theme" value="{{ t.key }}"
+             {{ 'checked' if t.key == values.get('theme') or (loop.first and not values.get('theme')) }}>
       <div class="tile">
         <span class="mood">{{ t.mood }}</span>
         <b>{{ t.name }}</b>
@@ -77,7 +117,8 @@
     </label>
     {% endfor %}
     <label>
-      <input type="radio" name="theme" value="random">
+      <input type="radio" name="theme" value="random"
+             {{ 'checked' if values.get('theme') == 'random' }}>
       <div class="tile">
         <span class="mood">can't decide</span>
         <b>Surprise me</b>

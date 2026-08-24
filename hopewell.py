@@ -128,6 +128,7 @@ def cmd_render(args) -> int:
         title=args.title or track.title,
         artist=args.artist or track.artist,
         theme=args.theme,
+        transpose=args.transpose,
         lyrics_path=str(lyrics),
         audio_path=str(audio),
         stage=Stage.REVIEW,
@@ -197,6 +198,8 @@ def main() -> int:
     p.add_argument("--artist", default="")
     p.add_argument("--out")
     p.add_argument("--id")
+    p.add_argument("--transpose", type=int, default=0, metavar="SEMITONES",
+                   help="shift the key, e.g. 2 or -1. Tempo is never changed.")
     p.add_argument("--no-footage", action="store_true",
                    help="use the procedural backdrop instead of stock footage")
     p.set_defaults(func=cmd_render)

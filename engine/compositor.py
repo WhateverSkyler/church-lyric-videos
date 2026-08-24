@@ -117,7 +117,7 @@ def plan_line(line: LyricLine, sprites: list, animation: TextAnimation,
     cue — being slightly less animated is always preferable to being late.
     """
     span = max(0.25, line.end - line.start)
-    lead = animation.total_lead_in(len(sprites), span)
+    lead = animation.readable_lead_in(len(sprites), span)
 
     if previous_end is not None:
         available = line.start - previous_end + max_overlap

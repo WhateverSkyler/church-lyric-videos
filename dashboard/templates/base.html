@@ -73,6 +73,13 @@ textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5p
 input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:1px}
 
 .hint{font-size:.84rem;color:var(--muted);margin-top:.3rem}
+.fielderr{font-size:.88rem;color:#A8341C;margin-top:.35rem;font-weight:700;
+  display:flex;gap:.4rem;align-items:flex-start}
+.fielderr::before{content:"!";flex:0 0 1.05rem;height:1.05rem;border-radius:50%;
+  background:#A8341C;color:#fff;font-size:.72rem;text-align:center;
+  line-height:1.05rem;font-weight:900}
+.bad{border-color:#D8654B !important;background:#FFF7F5}
+.bad:focus{outline-color:#A8341C}
 .err{background:#FBE2DE;border:1px solid #F0B6AA;color:#8C2A17;
   padding:.7rem .9rem;border-radius:var(--radius);margin-bottom:1rem}
 .ok{background:#E2F3E0;border:1px solid #B6DDB0;color:#2C6B25;
