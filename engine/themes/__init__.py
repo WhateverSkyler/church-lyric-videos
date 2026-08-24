@@ -17,6 +17,7 @@ from PIL import Image
 
 from .. import background as bg
 from ..brand import Fonts, Palette
+from ..textanim import PRESETS as ANIM, TextAnimation
 from ..textcard import Glow, Shadow, TextStyle
 
 
@@ -62,8 +63,11 @@ class Theme:
     overlay_blend: str = "screen"
     motion: Motion = field(default_factory=Motion)
     logo: LogoMark = field(default_factory=LogoMark)
-    #: Shown in the dashboard as a one-word mood tag.
+    #: Shown in the dashboard as a one-word mood tag. Also selects which
+    #: bucket of stock footage this theme draws its backdrop from.
     mood: str = ""
+    #: How the type arrives, sits and leaves. See textanim.PRESETS.
+    animation: TextAnimation = field(default_factory=lambda: ANIM["lift"])
 
     def base_plate(self, frame: tuple):
         return bg.cached_plate(self.key, "base", frame,
@@ -106,6 +110,7 @@ CINEMATIC_WARM = Theme(
     name="Cinematic Warm",
     description="Dark room, soft gold light rays and drifting bokeh. The default Sunday look.",
     mood="warm",
+    animation=ANIM["lift"],
     text=TextStyle(
         face=Fonts.SERIF_BOLD, size=80,
         gradient=(Palette.WHITE, "#FFF6E4", Palette.WHEAT),
@@ -140,6 +145,7 @@ NAVY_MINIMAL = Theme(
     name="Navy Minimal",
     description="Flat church navy, bold sans type. Easiest to read from the back row.",
     mood="clean",
+    animation=ANIM["gentle"],
     text=TextStyle(
         face=Fonts.SANS_BLACK, size=76, color=Palette.WHITE,
         glow=None,
@@ -185,6 +191,7 @@ STAINED_GLASS = Theme(
     name="Stained Glass",
     description="The church's sunburst mark opened up across the whole frame.",
     mood="reverent",
+    animation=ANIM["focus"],
     text=TextStyle(
         face=Fonts.SERIF_BOLD, size=78,
         gradient=(Palette.WHITE, "#FFF4DC"),
@@ -227,6 +234,7 @@ SANCTUARY_DUSK = Theme(
     name="Sanctuary Dusk",
     description="Deep blue falling into ember light. Suits slower hymns and invitations.",
     mood="reflective",
+    animation=ANIM["hymn"],
     text=TextStyle(
         face=Fonts.SERIF_REGULAR, size=82,
         gradient=(Palette.WHITE, "#FFEFD8"),
@@ -263,6 +271,7 @@ MORNING_LIGHT = Theme(
     name="Morning Light",
     description="Warm cream and deep navy type. Built for bright rooms where dark themes wash out.",
     mood="bright",
+    animation=ANIM["rise"],
     text=TextStyle(
         face=Fonts.SERIF_BOLD, size=78,
         color=Palette.NAVY_DEEP, gradient=None,
@@ -302,6 +311,7 @@ HILLSIDE = Theme(
     name="Hillside",
     description="The green half of the church mark — open and outdoor. Good for upbeat songs.",
     mood="hopeful",
+    animation=ANIM["reveal"],
     text=TextStyle(
         face=Fonts.SANS_BOLD, size=76,
         gradient=(Palette.WHITE, "#F2FFE8"),
