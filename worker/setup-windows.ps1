@@ -182,6 +182,24 @@ if ($gpu) {
     Pip "Installing Whisper, Demucs and EasyOCR" `
         @("install", "--quiet", "openai-whisper", "demucs", "easyocr")
 
+    # Tesseract as a real fallback rather than a suggestion. EasyOCR is the
+    # better engine here, but if anything about its install breaks there would
+    # otherwise be NO way to read words off a video at all.
+    if (-not (Get-Command tesseract -ErrorAction SilentlyContinue) -and
+        -not (Test-Path "C:\Program Files\Tesseract-OCR\tesseract.exe")) {
+        Say "Installing Tesseract as an OCR fallback"
+        winget install --id UB-Mannheim.TesseractOCR --silent `
+               --accept-source-agreements --accept-package-agreements `
+               --disable-interactivity 2>$null
+        if (Test-Path "C:\Program Files\Tesseract-OCR\tesseract.exe") {
+            Good "Tesseract fallback installed"
+        } else {
+            Warn "Tesseract did not install. EasyOCR will be the only OCR engine."
+        }
+    } else {
+        Good "Tesseract already present as a fallback"
+    }
+
     # torchaudio is what Demucs needs, and it is the piece most likely to have
     # been dropped by a fallback.
     & $py -c "import torch, torchaudio; assert torch.cuda.is_available()" 2>$null

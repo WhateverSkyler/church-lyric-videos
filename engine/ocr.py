@@ -375,10 +375,15 @@ class TesseractBackend:
     def __init__(self, psm: int = 6, lang: str = "eng"):
         self.psm = psm
         self.lang = lang
-        if not shutil.which("tesseract"):
+        # Resolved through tools rather than PATH: a SYSTEM scheduled task
+        # does not inherit a user's PATH, so a perfectly good installation is
+        # invisible to shutil.which() there.
+        self.exe = tools.tesseract()
+        if not self.exe:
             raise RuntimeError(
-                "tesseract not found on PATH. brew install tesseract "
-                "(macOS) or choco install tesseract (Windows)."
+                "tesseract not found. Install it (winget install "
+                "UB-Mannheim.TesseractOCR on Windows, brew install tesseract "
+                "on macOS), or point HOPEWELL_TESSERACT at it."
             )
 
     def read(self, mask: np.ndarray, workdir: Path) -> str:
@@ -389,7 +394,7 @@ class TesseractBackend:
         path = workdir / "ocr.png"
         img.save(path)
         proc = subprocess.run(
-            ["tesseract", str(path), "-", "--psm", str(self.psm), "-l", self.lang],
+            [self.exe, str(path), "-", "--psm", str(self.psm), "-l", self.lang],
             capture_output=True, text=True, errors="replace")
         return proc.stdout if proc.returncode == 0 else ""
 
@@ -426,14 +431,32 @@ class EasyOCRBackend:
 
 
 def make_backend(prefer: str = "auto"):
-    """Pick the best available OCR engine."""
+    """Pick the best available OCR engine.
+
+    When neither works, the error names BOTH causes. Reporting only the
+    Tesseract failure — which is what a bare fallback does — points at the
+    wrong thing entirely on a machine where EasyOCR is the intended engine and
+    something about its install is broken.
+    """
+    easy_error = None
     if prefer in ("auto", "easyocr"):
         try:
             return EasyOCRBackend()
-        except Exception:
+        except Exception as exc:
             if prefer == "easyocr":
                 raise
-    return TesseractBackend()
+            easy_error = exc
+
+    try:
+        return TesseractBackend()
+    except RuntimeError as tess_error:
+        if easy_error is None:
+            raise
+        raise RuntimeError(
+            "No OCR engine is usable, so the words cannot be read off a "
+            f"video.\n  EasyOCR (preferred): {easy_error}\n"
+            f"  Tesseract (fallback): {tess_error}"
+        ) from easy_error
 
 
 # --------------------------------------------------------------------------

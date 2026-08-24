@@ -1,4 +1,4 @@
-"""Finds ffmpeg, ffprobe and yt-dlp without depending on PATH.
+"""Finds ffmpeg, ffprobe, yt-dlp and tesseract without depending on PATH.
 
 The render machine is also the church's livestream machine, and it already has
 its own copies of these tools in a `tools\\` folder beside the streaming setup.
@@ -12,6 +12,10 @@ So each binary is resolved in this order:
     2. worker/.env, so the installer can record what it found
     3. PATH, which is the normal case on a development machine
     4. a short list of the usual places, including the sibling tools\\ folder
+
+PATH is especially unreliable on the render machine: the worker runs there as
+a SYSTEM scheduled task, which inherits none of a user's PATH, so a perfectly
+good installation is invisible to shutil.which() alone.
 
 Resolution is cached, because these are looked up on nearly every subprocess.
 """
@@ -39,6 +43,13 @@ _SPEC = {
     "yt-dlp": ("HOPEWELL_YTDLP", (
         "tools/yt-dlp.exe", "tools/yt-dlp",
         "/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp",
+    )),
+    "tesseract": ("HOPEWELL_TESSERACT", (
+        "tools/tesseract.exe",
+        "C:/Program Files/Tesseract-OCR/tesseract.exe",
+        "C:/Program Files (x86)/Tesseract-OCR/tesseract.exe",
+        "/opt/homebrew/bin/tesseract", "/usr/local/bin/tesseract",
+        "/usr/bin/tesseract",
     )),
 }
 
@@ -133,6 +144,11 @@ def ffprobe() -> str:
 
 def yt_dlp() -> str:
     return require("yt-dlp")
+
+
+def tesseract() -> str | None:
+    """Optional: the fallback OCR engine. None when it isn't installed."""
+    return find("tesseract")
 
 
 def report() -> dict:
