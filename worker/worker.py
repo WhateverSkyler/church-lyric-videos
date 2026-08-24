@@ -287,8 +287,18 @@ class Worker:
         if self.respect_services:
             try:
                 song = probe_duration(Path(job.audio_path))
+                # Ask what the encoder will ACTUALLY be, rather than assuming
+                # hardware whenever a stream isn't running. NVENC can be
+                # unusable for reasons that have nothing to do with OBS — a
+                # driver too old for the build's NVENC API, for one — and an
+                # optimistic estimate would let a render start that then runs
+                # into a service.
+                from engine.render import pick_encoder
+
+                encoder, _ = pick_encoder(
+                    allow_hardware=not verdict.force_software)
                 estimate = guard.estimate_seconds(
-                    song, hardware=not verdict.force_software)
+                    song, hardware=encoder != "libx264")
                 from datetime import datetime
 
                 crossing = guard.would_cross_window(datetime.now(), estimate)
