@@ -293,6 +293,9 @@ def create_job():
                                transposes=TRANSPOSE_CHOICES,
                                errors=errors, values=values), 400
 
+    # A look is chosen for them. Picking one was the single most laboured
+    # decision on the form and nobody minded which they got, so it rotates.
+    values["theme"] = "random"
     job_id = store.create(requested_by=current_user(), stage="queued", **values)
     if has_file:
         # Named after the job, so the file can only be reached once the job it

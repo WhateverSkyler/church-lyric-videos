@@ -205,7 +205,7 @@ def check_new_song(form, existing: list, transpose_choices,
                        "That's the same link as the instrumental. The second "
                        "one needs to be the version with singing on it.")
 
-    theme = form.get("theme", "")
+    theme = "random"
     try:
         transpose = int(form.get("transpose") or 0)
     except (TypeError, ValueError):

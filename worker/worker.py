@@ -254,7 +254,7 @@ class Worker:
             return
 
         track = LyricTrack.load(Path(job.lyrics_path))
-        log(f"  recovered {len(track)} lines -> awaiting review")
+        log(f"  recovered {len(track)} lines -> rendering")
 
         # Send the track up too, so the review screen can offer tap-timing.
         # Audio is a few MB against the couple of hundred a finished video
@@ -264,9 +264,13 @@ class Worker:
         except Exception as exc:
             log(f"  note: could not upload the track for tap-timing ({exc})")
 
+        # Straight to rendering. The team wanted one submit and a finished
+        # video, so the review gate is not in the way by default - the words
+        # can still be corrected and re-rendered from the job page afterwards
+        # if something reads wrong.
         self.api.update(
             job.id,
-            stage="review",
+            stage="approved",
             lyrics=Path(job.lyrics_path).read_text(encoding="utf-8"),
             title=job.title or track.title,
             notes=job.notes,

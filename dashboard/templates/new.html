@@ -3,11 +3,14 @@
 {% block body %}
 
 <h1>Add a song</h1>
+<p class="muted" style="margin:-.6rem 0 1.2rem">
+  Fill this in and you're done — the video gets made on its own.
+</p>
 
 {% if errors %}
 <div class="err">
-  <b>{{ 'One thing needs' if errors.fields|length == 1 else 'A few things need' }} fixing
-  before this can be added.</b> Everything you typed is still here.
+  <b>{{ 'One thing needs' if errors.fields|length == 1 else 'A few things need' }} fixing.</b>
+  Everything you typed is still here.
 </div>
 {% endif %}
 
@@ -15,136 +18,66 @@
 <div class="card">
 
   <label for="title">Song name</label>
-  <input type="text" id="title" name="title" required maxlength="120"
+  <input type="text" id="title" name="title" required maxlength="120" autofocus
          class="{{ 'bad' if errors.get('title') }}"
          placeholder="e.g. Great Is Thy Faithfulness"
          value="{{ values.get('title', '') }}">
   {% if errors.get('title') %}<div class="fielderr">{{ errors.get('title') }}</div>{% endif %}
 
-  <label for="artist">Artist <span class="muted">(optional)</span></label>
-  <input type="text" id="artist" name="artist" maxlength="120"
-         placeholder="Leave blank if you're not sure"
-         value="{{ values.get('artist', '') }}">
-
-  <label>What are you starting from?</label>
-  <div class="themegrid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
-    <label>
-      <input type="radio" name="source" value="lyric_video"
-             {{ 'checked' if values.get('source', 'lyric_video') != 'instrumental' }}
-             onchange="document.getElementById('orig').style.display='none'">
-      <div class="tile">
-        <span class="mood">Most of the time</span>
-        <b>A lyric video</b>
-        <p>The usual one. Paste a YouTube link to the instrumental-with-lyrics
-           video you'd normally play. We read the words and their timing straight
-           off it, then rebuild it in our own styling.</p>
-      </div>
-    </label>
-    <label>
-      <input type="radio" name="source" value="instrumental"
-             {{ 'checked' if values.get('source') == 'instrumental' }}
-             onchange="document.getElementById('orig').style.display='block'">
-      <div class="tile">
-        <span class="mood">Harder</span>
-        <b>Just an instrumental</b>
-        <p>No lyrics on screen to read. We work out the timing from the original
-           recording instead, so you'll need to paste a link to that too.</p>
-      </div>
-    </label>
-  </div>
-
-  <label for="source_file">Upload the video <span class="muted">(most reliable)</span></label>
-  <input type="file" id="source_file" name="source_file"
-         accept="video/*,audio/*"
-         style="padding:.5rem;background:#fff;border:1px solid #CBD4DD;border-radius:10px;width:100%">
+  <label for="source_file" style="margin-top:1.3rem">The video</label>
+  <input type="file" id="source_file" name="source_file" accept="video/*,audio/*"
+         style="padding:.55rem;background:#fff;border:1px solid #CBD4DD;
+                border-radius:10px;width:100%">
   <div class="hint">
-    If you already downloaded the video, choose it here. This always works.
-    YouTube blocks a lot of worship music from being downloaded automatically,
-    so a link can fail where the file will not.
+    Choose the instrumental-with-lyrics video you'd normally play.
   </div>
 
-  <label for="source_ref" style="margin-top:1.1rem">…or paste a link instead</label>
-  <input type="url" id="source_ref" name="source_ref"
-         class="{{ 'bad' if errors.get('source_ref') }}"
-         placeholder="https://www.youtube.com/watch?v=..."
-         value="{{ values.get('source_ref', '') }}">
-  {% if errors.get('source_ref') %}
-    <div class="fielderr">{{ errors.get('source_ref') }}</div>
-  {% else %}
-    <div class="hint">Paste a YouTube link. This is the audio the finished video will use.</div>
-  {% endif %}
+  <details style="margin-top:.9rem"
+           {{ 'open' if errors.get('source_ref') }}>
+    <summary style="cursor:pointer;font-size:.88rem;color:var(--muted)">
+      Don't have the file? Paste a link instead
+    </summary>
+    <div style="margin-top:.6rem">
+      <input type="url" id="source_ref" name="source_ref"
+             class="{{ 'bad' if errors.get('source_ref') }}"
+             placeholder="https://www.youtube.com/watch?v=..."
+             value="{{ values.get('source_ref', '') }}">
+      {% if errors.get('source_ref') %}
+        <div class="fielderr">{{ errors.get('source_ref') }}</div>
+      {% else %}
+        <div class="hint">
+          Links work, but YouTube blocks a lot of worship music from
+          downloading. If it fails, download the video and choose the file above.
+        </div>
+      {% endif %}
+    </div>
+  </details>
 
-
-  <label for="transpose">Key</label>
+  <label for="transpose" style="margin-top:1.3rem">Key</label>
   <select id="transpose" name="transpose">
     {% for st in transposes %}
     <option value="{{ st }}" {{ 'selected' if st == values.get('transpose', 0) }}>
-      {% if st == 0 %}Original key — no change
-      {% elif st > 0 %}Up {{ st }} semitone{{ 's' if st != 1 }}  ({{ '+%d'|format(st) }})
-      {% else %}Down {{ -st }} semitone{{ 's' if st != -1 }}  ({{ st }})
+      {% if st == 0 %}Same key as the video
+      {% elif st > 0 %}Up {{ st }} semitone{{ 's' if st != 1 }}
+      {% else %}Down {{ -st }} semitone{{ 's' if st != -1 }}
       {% endif %}
     </option>
     {% endfor %}
   </select>
   <div class="hint">
-    Only changes the pitch — the song plays at exactly the same speed, so the
-    words still land on the right beat. The change is written into the file
-    name, e.g. <code>Song Name (+2)</code>.
-  </div>
-
-  <div id="orig" style="display:{{ 'block' if values.get('source') == 'instrumental' else 'none' }}">
-    <label for="original_ref">Link to the original recording (with singing)</label>
-    <input type="url" id="original_ref" name="original_ref"
-           class="{{ 'bad' if errors.get('original_ref') }}"
-           placeholder="https://www.youtube.com/watch?v=..."
-           value="{{ values.get('original_ref', '') }}">
-    {% if errors.get('original_ref') %}
-      <div class="fielderr">{{ errors.get('original_ref') }}</div>
-    {% endif %}
-    <div class="hint">
-      Only used to work out <em>when</em> each line is sung. The finished video
-      still uses the instrumental you linked above.
-    </div>
-  </div>
-</div>
-
-<div class="card">
-  <label>Pick a look</label>
-  <div class="hint" style="margin:0 0 .7rem">
-    They all use the church's colours and logo — just different moods, so every
-    week doesn't look the same.
-  </div>
-  <div class="themegrid">
-    {% for t in themes %}
-    <label>
-      <input type="radio" name="theme" value="{{ t.key }}"
-             {{ 'checked' if t.key == values.get('theme') or (loop.first and not values.get('theme')) }}>
-      <div class="tile">
-        <span class="mood">{{ t.mood }}</span>
-        <b>{{ t.name }}</b>
-        <p>{{ t.description }}</p>
-      </div>
-    </label>
-    {% endfor %}
-    <label>
-      <input type="radio" name="theme" value="random"
-             {{ 'checked' if values.get('theme') == 'random' }}>
-      <div class="tile">
-        <span class="mood">can't decide</span>
-        <b>Surprise me</b>
-        <p>Picks one of the looks above for you.</p>
-      </div>
-    </label>
+    Changes the pitch only — it still plays at the same speed, so the words
+    stay on the beat.
   </div>
 </div>
 
 <p>
-  <button class="btn go" type="submit">Add to the queue</button>
+  <button class="btn go" type="submit" style="padding:.85rem 1.6rem;font-size:1rem">
+    Make the video
+  </button>
   <a class="btn alt" href="{{ url_for('index') }}">Cancel</a>
 </p>
 <p class="muted">
-  The church computer picks this up on its own. You'll get a chance to check the
-  words before the video is made.
+  Takes about 20 minutes. You can close this page — it carries on without you.
 </p>
 </form>
 {% endblock %}
