@@ -41,9 +41,31 @@ function Fail ($m) { Write-Host "    x $m" -ForegroundColor Red; exit 1 }
 # installer sails past a broken install and reports success, which is how a
 # CPU-only torch got installed and went unnoticed.
 function Pip {
-    param([string]$Why, [string[]]$Args)
-    & $py -m pip @Args
+    # NOT $Args: that is an automatic PowerShell variable, and a parameter
+    # named after one silently never receives its value. Every call then runs
+    # a bare `python -m pip`, installs nothing, and exits cleanly enough to
+    # slip past the check below.
+    param([string]$Why, [string[]]$PipArgs)
+    if (-not $PipArgs -or $PipArgs.Count -eq 0) {
+        Fail "internal error: Pip called with no arguments ($Why)."
+    }
+    & $py -m pip @PipArgs
     if ($LASTEXITCODE -ne 0) { Fail "$Why failed (pip exit $LASTEXITCODE)." }
+}
+
+# Windows PowerShell 5.1 promotes ANY stderr output from a native command into
+# a terminating error while $ErrorActionPreference is 'Stop' - so a harmless
+# warning from python (a NumPy notice, a CUDA deprecation) kills the whole
+# installer mid-check. 2>$null does not prevent this. Preference is lowered
+# around the call and restored afterwards.
+function PyOut {
+    param([string]$Code)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $out = & $py -c $Code 2>&1 | Out-String
+        return $out.Trim()
+    } finally { $ErrorActionPreference = $prev }
 }
 function Good ($m) { Write-Host "    $m"   -ForegroundColor Green }
 function Warn ($m) { Write-Host "    ! $m" -ForegroundColor Yellow }
@@ -153,7 +175,7 @@ if ($gpu) {
     # silently falls back to PyPI, whose Windows torch is CPU-only - so the
     # install "succeeds" with no GPU at all. Newer indexes are tried first and
     # each is verified before being accepted.
-    $pyver = & $py -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    $pyver = PyOut "import sys; print('%d.%d' % sys.version_info[:2])"
     Write-Host "    Python $pyver, choosing a CUDA wheel index to match"
 
     $ok = $false
@@ -163,8 +185,11 @@ if ($gpu) {
               --index-url "https://download.pytorch.org/whl/$cu"
         if ($LASTEXITCODE -ne 0) { Warn "$cu has no wheels for Python $pyver"; continue }
 
-        $built = & $py -c "import torch; print(torch.version.cuda or 'none')" 2>$null
-        if ($built -and $built -ne "none") {
+        $built = PyOut "import torch; print(torch.version.cuda or 'none')"
+        # PyOut returns whatever python printed plus any warnings, so match on
+        # a CUDA version appearing rather than on exact equality.
+        if ($built -match "(\d+\.\d+)") {
+            $built = $Matches[1]
             Good "torch with CUDA $built ($cu)"
             $ok = $true
             break
@@ -202,11 +227,17 @@ if ($gpu) {
 
     # torchaudio is what Demucs needs, and it is the piece most likely to have
     # been dropped by a fallback.
-    & $py -c "import torch, torchaudio; assert torch.cuda.is_available()" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Fail "torch/torchaudio installed but CUDA is not available. Check the driver."
+    # A real allocation on the device, not just a capability flag: reporting
+    # availability and actually working are different things.
+    $check = PyOut ("import torch, torchaudio; " +
+                    "x = torch.zeros(64, 64, device='cuda') @ " +
+                    "torch.zeros(64, 64, device='cuda'); " +
+                    "print('CUDA_OK', torch.cuda.get_device_name(0))")
+    if ($check -notmatch "CUDA_OK") {
+        Fail "torch is installed but could not run on the GPU:`n$check"
     }
-    Good "CUDA confirmed working"
+    Good ($check -split "`n" | Where-Object { $_ -match "CUDA_OK" } |
+          ForEach-Object { $_ -replace "CUDA_OK ", "GPU verified: " })
 } else {
     Say "Installing CPU-only Whisper and Demucs"
     Pip "Installing torch" @("install", "--quiet", "torch", "torchaudio")
