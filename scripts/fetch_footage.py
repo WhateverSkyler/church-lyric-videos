@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Populate the stock-footage library from Pexels.
+"""Fetch candidate backdrops from Pexels FOR REVIEW.
+
+Nothing downloaded here is used by anything. Stock libraries are searched by
+keyword, so what comes back cannot be known in advance, and an unattended
+render putting an unseen clip behind worship lyrics is not a risk worth
+carrying. Every clip arrives marked unapproved and stays invisible to the
+renderer until a person has watched it and said otherwise.
+
+Approve with scripts/approve_footage.py after looking at the contact sheet.
 
     python scripts/fetch_footage.py                    # every mood, 3 clips each
     python scripts/fetch_footage.py --mood warm -n 5

@@ -126,6 +126,11 @@ class Clip:
     #: Filename inside LIBRARY/prepared, set once graded and looped.
     prepared: str = ""
     tags: list = field(default_factory=list)
+    #: A clip is only ever used once somebody has looked at it and said so.
+    #: Stock libraries are searched by keyword, so what comes back is unknown
+    #: until it is on screen - and behind worship lyrics that is not a risk
+    #: worth carrying for the sake of a nicer backdrop.
+    approved: bool = False
     #: Direct CDN link to the chosen rendition, captured from the search
     #: response. The per-video detail endpoint 403s on this key tier, and the
     #: search payload already carries every rendition, so there is no reason
@@ -401,10 +406,15 @@ def save_catalog(clips: dict) -> Path:
 
 
 def for_mood(mood: str, catalog: dict | None = None) -> list:
-    """Every prepared clip catalogued under `mood`."""
+    """Approved, prepared clips catalogued under `mood`.
+
+    Unapproved clips are invisible here by design, so a fetch cannot put
+    anything on screen on its own.
+    """
     catalog = load_catalog() if catalog is None else catalog
     return [c for c in catalog.values()
-            if c.mood == mood and c.prepared and c.prepared_path.is_file()]
+            if c.mood == mood and c.approved
+            and c.prepared and c.prepared_path.is_file()]
 
 
 def pick(mood: str, seed: int = 0, catalog: dict | None = None) -> Clip | None:

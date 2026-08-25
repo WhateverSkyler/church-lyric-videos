@@ -329,7 +329,7 @@ def prepare(job: Job, workdir: Path, progress=None,
 
 
 def render(job: Job, out_dir: Path, progress=None,
-           use_footage: bool = True, force_software: bool = False) -> Job:
+           use_footage: bool = False, force_software: bool = False) -> Job:
     """Render the approved lyrics. Expects the job to have passed REVIEW."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

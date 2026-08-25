@@ -417,7 +417,7 @@ def render_animated(theme: Theme, lines: list, audio: Path, out: Path,
                     animation: TextAnimation | None = None,
                     frame: tuple = FRAME, fps: int = FPS,
                     encoder: str | None = None, title: str | None = None,
-                    clip_seed: int = 0, use_footage: bool = True,
+                    clip_seed: int = 0, use_footage: bool = False,
                     force_software: bool = False, progress=None) -> Result:
     """Render a fully animated lyric video.
 
@@ -431,6 +431,10 @@ def render_animated(theme: Theme, lines: list, audio: Path, out: Path,
     out.parent.mkdir(parents=True, exist_ok=True)
 
     # --- background -------------------------------------------------------
+    # Backgrounds come from the theme's own generated plate unless somebody
+    # has deliberately turned footage on AND signed off on the specific clips.
+    # Stock video is fetched by keyword, so what arrives cannot be known in
+    # advance - which is not a thing to put behind worship lyrics on trust.
     source = None
     background_desc = "plate"
     if use_footage:
