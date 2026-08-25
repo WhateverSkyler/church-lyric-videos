@@ -259,7 +259,12 @@ if ($ffmpeg)  { $lines += "HOPEWELL_FFMPEG=$ffmpeg" }
 if ($ffprobe) { $lines += "HOPEWELL_FFPROBE=$ffprobe" }
 if ($ytdlp)   { $lines += "HOPEWELL_YTDLP=$ytdlp" }
 $envFile = "$Root\worker\.env"
-($lines -join "`r`n") | Set-Content -Path $envFile -Encoding UTF8
+# NOT Set-Content -Encoding UTF8: in Windows PowerShell 5.1 that means "UTF-8
+# WITH a BOM", and the BOM ends up glued to the first key when the file is
+# read. WriteAllText with an explicit BOM-less encoding is the only reliable
+# way to get plain UTF-8 out of 5.1.
+[IO.File]::WriteAllText($envFile, (($lines -join "`r`n") + "`r`n"),
+                        (New-Object System.Text.UTF8Encoding($false)))
 Good "$envFile"
 
 # --------------------------------------------------------------------------
@@ -294,7 +299,11 @@ Good "registered '$taskName' - starts at boot, no sign-in needed, restarts on fa
 
 # --------------------------------------------------------------------------
 Say "Testing the connection"
-& $py "$Root\worker\worker.py" --url $Url --token $Token --sunday-dir $SundayDir --once
+# Deliberately WITHOUT --url/--token, so this exercises the same .env loading
+# the scheduled task depends on. Passing them on the command line tests a path
+# the task never takes, which is how a broken .env once reported "connection
+# OK" seconds before the task failed on exactly that config.
+& $py "$Root\worker\worker.py" --sunday-dir $SundayDir --once
 if ($LASTEXITCODE -ne 0) {
     Fail ("The worker could not reach the dashboard, or crashed on startup. " +
           "The scheduled task is registered but NOT started, so nothing will " +

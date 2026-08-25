@@ -162,10 +162,18 @@ def describe_gpu() -> str:
 
 
 def load_env() -> None:
+    """Read worker/.env, tolerating a byte-order mark.
+
+    utf-8-sig, not utf-8: PowerShell 5.1's `-Encoding UTF8` writes a BOM, and
+    read as plain utf-8 those three bytes are glued to the first key, which
+    becomes '\ufeffHOPEWELL_URL' and is silently never matched. Only the first
+    line is affected, so everything else parses and the failure looks like a
+    single missing setting rather than an encoding problem.
+    """
     env = Path(__file__).resolve().parent / ".env"
     if not env.is_file():
         return
-    for line in env.read_text(encoding="utf-8").splitlines():
+    for line in env.read_text(encoding="utf-8-sig").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

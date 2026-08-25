@@ -67,7 +67,7 @@ def _load_env_file() -> None:
         if not candidate.is_file():
             continue
         try:
-            for line in candidate.read_text(encoding="utf-8").splitlines():
+            for line in candidate.read_text(encoding="utf-8-sig").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
