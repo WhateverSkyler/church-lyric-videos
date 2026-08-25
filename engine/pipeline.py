@@ -128,8 +128,7 @@ def fetch(ref: str, workdir: Path, audio_only: bool = False,
         progress("fetch", 0, 1)
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
-        raise RuntimeError("yt-dlp failed:\n"
-                           + "\n".join(proc.stderr.strip().splitlines()[-12:]))
+        raise RuntimeError(explain_download_failure(proc.stderr))
 
     for line in reversed(proc.stdout.strip().splitlines()):
         candidate = Path(line.strip())
@@ -139,6 +138,43 @@ def fetch(ref: str, workdir: Path, audio_only: bool = False,
     if not files:
         raise RuntimeError("yt-dlp reported success but produced no file")
     return files[-1]
+
+
+#: yt-dlp's own wording, and what it actually means for whoever queued the
+#: song. Without this the dashboard shows a wall of stack trace to somebody
+#: who only pasted a link, and there is nothing they can do with it.
+_DOWNLOAD_HINTS = (
+    ("No supported JavaScript runtime",
+     "The church computer is missing a piece YouTube now requires. "
+     "Install Deno on it (winget install DenoLand.Deno) and try again - "
+     "nothing is wrong with the link."),
+    ("Sign in to confirm your age",
+     "YouTube is age-restricting this video, so it can't be downloaded. "
+     "Find another upload of the same song."),
+    ("Private video",
+     "That video is private. Find another upload of the same song."),
+    ("Video unavailable",
+     "That video isn't available any more. Find another upload."),
+    ("members-only",
+     "That video is members-only, so it can't be downloaded."),
+    ("This live event",
+     "That's a live stream rather than a finished video. Wait until it's "
+     "posted properly, or use another upload."),
+    ("HTTP Error 429",
+     "YouTube is rate-limiting the church computer. Wait an hour and retry."),
+    ("Requested format is not available",
+     "That video has no downloadable format. Try another upload."),
+)
+
+
+def explain_download_failure(stderr: str) -> str:
+    """A message worth showing on the dashboard, plus the raw tail."""
+    text = stderr or ""
+    for needle, human in _DOWNLOAD_HINTS:
+        if needle.lower() in text.lower():
+            return human
+    tail = "\n".join(text.strip().splitlines()[-6:])
+    return f"The track could not be downloaded.\n{tail}"
 
 
 def extract_audio(media: Path, out: Path) -> Path:

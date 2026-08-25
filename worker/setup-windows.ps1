@@ -154,6 +154,26 @@ if (-not $python -and -not $SkipPython) {
 }
 
 # --------------------------------------------------------------------------
+Say "Checking for a JavaScript runtime"
+# yt-dlp now needs one to extract from YouTube; without it YouTube answers
+# 403 and every download fails. Deno is the only runtime yt-dlp enables by
+# default, and it is a single self-contained binary.
+if (Get-Command deno -ErrorAction SilentlyContinue) {
+    Good "deno already present"
+} else {
+    winget install --id DenoLand.Deno --silent --accept-source-agreements `
+           --accept-package-agreements --disable-interactivity 2>$null
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                [Environment]::GetEnvironmentVariable("Path", "User")
+    if (Get-Command deno -ErrorAction SilentlyContinue) {
+        Good "deno installed"
+    } else {
+        Warn "deno did not install. YouTube downloads will fail with HTTP 403"
+        Warn "until a JavaScript runtime is available."
+    }
+}
+
+# --------------------------------------------------------------------------
 Say "Checking the GPU"
 $gpu = $null
 try { $gpu = & nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>$null } catch { }
