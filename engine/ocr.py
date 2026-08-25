@@ -413,20 +413,61 @@ class EasyOCRBackend:
         self._reader = easyocr.Reader(["en"], gpu=gpu, verbose=False)
 
     def read(self, mask: np.ndarray, workdir: Path) -> str:
+        """Detected fragments, reassembled into reading order.
+
+        The detector returns boxes in no particular order, so they have to be
+        put back into rows and then left-to-right WITHIN each row. Sorting by
+        vertical position alone - which an earlier version did - leaves words
+        joined in detection order, and a line comes out with its words
+        shuffled. It looks like plausible English, which is what makes it
+        dangerous: it reads as a real line and would go on screen unnoticed.
+
+        Rows are grouped by overlap against the median glyph height rather
+        than a fixed pixel gap, so it holds at any type size.
+        """
         img = np.where(mask, 0, 255).astype(np.uint8)
-        rows = self._reader.readtext(img, detail=1, paragraph=False)
-        # Group by vertical position so multi-line cards keep their line breaks.
-        rows = sorted(rows, key=lambda r: (min(p[1] for p in r[0])))
-        lines, current, last_y = [], [], None
-        for box, text, _conf in rows:
-            y = min(p[1] for p in box)
-            if last_y is not None and abs(y - last_y) > 18:
-                lines.append(" ".join(current))
-                current = []
-            current.append(text)
-            last_y = y
-        if current:
-            lines.append(" ".join(current))
+        found = self._reader.readtext(img, detail=1, paragraph=False)
+        if not found:
+            return ""
+
+        items = []
+        for box, text, conf in found:
+            if not (text or "").strip():
+                continue
+            ys = [p[1] for p in box]
+            xs = [p[0] for p in box]
+            items.append({
+                "text": text.strip(),
+                "top": min(ys),
+                "mid": (min(ys) + max(ys)) / 2.0,
+                "height": max(ys) - min(ys),
+                "left": min(xs),
+                "conf": conf,
+            })
+        if not items:
+            return ""
+
+        heights = sorted(i["height"] for i in items)
+        typical = heights[len(heights) // 2] or 1.0
+        # Two fragments belong to the same row when their centres sit within
+        # roughly half a line of each other.
+        tolerance = max(8.0, typical * 0.6)
+
+        rows: list = []
+        for item in sorted(items, key=lambda i: i["mid"]):
+            if rows and abs(item["mid"] - rows[-1]["mid"]) <= tolerance:
+                rows[-1]["items"].append(item)
+                # Track the running centre so a gently drifting row still binds.
+                rows[-1]["mid"] = sum(x["mid"] for x in rows[-1]["items"]) / len(rows[-1]["items"])
+            else:
+                rows.append({"mid": item["mid"], "items": [item]})
+
+        lines = []
+        for row in rows:
+            ordered = sorted(row["items"], key=lambda i: i["left"])
+            line = " ".join(i["text"] for i in ordered).strip()
+            if line:
+                lines.append(line)
         return "\n".join(lines)
 
 
@@ -544,6 +585,46 @@ def clean(raw: str) -> str:
     return normalise_case("\n".join(lines))
 
 
+#: Words that mark a card as the source video's own branding rather than a
+#: lyric. These are what an uploader puts on the title screen, and OCR reads
+#: them just as happily as it reads the song.
+_TITLE_CARD_WORDS = {
+    "instrumental", "karaoke", "cover", "lyrics", "lyric", "backing",
+    "track", "playback", "accompaniment", "subscribe", "channel",
+    "official", "audio", "video", "hd", "remastered", "minus", "one",
+    "performance", "demo", "preview", "copyright", "records", "music",
+    "productions", "ministries", "www", "com", "http", "https",
+}
+
+#: How long into a video a card may still be branding rather than singing.
+TITLE_CARD_WINDOW = 30.0
+
+
+def looks_like_title_card(text: str) -> bool:
+    """Whether a card is the source's own title screen, not a lyric.
+
+    Left in, it becomes the first thing on screen: the previous render opened
+    on a mangled rendition of the uploader's branding, which is precisely the
+    borrowed styling this whole program exists to get rid of.
+    """
+    words = [w.strip(".,!?;:\"'()-").lower() for w in text.split()]
+    words = [w for w in words if w]
+    if not words:
+        return True
+
+    hits = sum(1 for w in words if w in _TITLE_CARD_WORDS)
+    if hits >= 2:
+        return True
+    if hits and len(words) <= 4:
+        return True
+
+    # OCR makes a mess of the script and logo type these cards favour, so a
+    # card that is mostly unreadable this early is branding rather than words
+    # anybody is expected to sing.
+    odd = sum(1 for w in words if sum(c.isalpha() for c in w) < len(w) * 0.7)
+    return odd >= max(2, len(words) * 0.4)
+
+
 def looks_suspect(text: str) -> bool:
     """Flag text the person proofreading should look at first."""
     if not text:
@@ -585,6 +666,8 @@ def extract(video: Path, fps: float = SWEEP_FPS, backend=None,
                 continue
             text = clean(backend.read(seg.mask, workdir))
             if not text:
+                continue
+            if seg.start < TITLE_CARD_WINDOW and looks_like_title_card(text):
                 continue
             track.lines.append(LyricLine(
                 text=text,
