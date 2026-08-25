@@ -39,9 +39,14 @@ transcribe, so the timings are borrowed from the original recording: demucs
 splits the vocal out, Whisper timestamps it word by word, and DTW maps that
 onto the backing track's own timeline. Needs a link to the original as well.
 
-Either way it stops and asks a human to check the words before rendering
-anything. Automatic transcription gets a word wrong now and then, and a wrong
-word is far more embarrassing on a sanctuary screen than in a text box.
+Either way it is one submit and nothing else. The form asks three things —
+song name, the video file, and the key — and the finished video appears
+without coming back.
+
+There is a real cost to that. OCR mis-reads a word occasionally, and with no
+review step a wrong word reaches the screen. The job page allows correcting
+the words and re-rendering afterwards, so a mistake is fixable rather than
+merely unnoticed.
 
 ## The themes
 
@@ -58,8 +63,13 @@ mark somewhere.
 | `morning-light` | bright | Bright rooms where dark themes wash out |
 | `hillside` | hopeful | Upbeat songs |
 
-Backgrounds are real stock footage from Pexels (free for commercial use),
-auto-graded and seamlessly looped. `random` picks one for you.
+A look is chosen automatically, so consecutive weeks do not match.
+
+Backgrounds are **generated**, not stock video: each plate is built from the
+colours sampled off the church's logo and contains no external content. Stock
+footage support exists but is OFF by default and gated behind per-clip
+approval — a keyword search cannot be known in advance, and unreviewed video
+has no business behind worship lyrics. See "Backgrounds" below.
 
 ## Command line
 
@@ -147,6 +157,31 @@ What the review step edits. Deliberately plain, so it can be fixed quickly:
 
 An indented continuation row becomes a literal line break on screen, so
 whoever is proofreading controls where lines split without touching timings.
+
+## Backgrounds
+
+Renders use the theme's own generated plate. Three separate locks keep stock
+video out unless somebody has actually looked at it:
+
+- `use_footage` defaults to `False` in both the compositor and the pipeline
+- every catalogued clip carries `approved=False`, and `for_mood()` will not
+  return an unapproved clip
+- `scripts/fetch_footage.py` downloads candidates **for review only**
+
+To use footage: fetch candidates, look at every one, mark the acceptable ones
+approved, then pass `use_footage=True`.
+
+## Getting the source video
+
+Uploading the file is the dependable route, and it is what the form leads with.
+YouTube declines to serve a great deal of music to anything that is not a
+browser — two different uploads of the same worship song were refused from the
+render machine while a control video downloaded fine seconds later. Links still
+work for anything not blocked.
+
+Authenticating around that was deliberately NOT done: the obvious credentials
+on the render machine belong to the church's own Google account, which owns
+the channel the Sunday service streams to.
 
 ## Timing
 
