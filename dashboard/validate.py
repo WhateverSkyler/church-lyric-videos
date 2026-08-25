@@ -161,7 +161,8 @@ ACTIVE_STAGES = ("queued", "fetching", "extracting", "review",
                  "approved", "rendering")
 
 
-def check_new_song(form, existing: list, transpose_choices) -> tuple:
+def check_new_song(form, existing: list, transpose_choices,
+                   uploaded_name: str = "") -> tuple:
     """Validate the 'add a song' form.
 
     Returns (cleaned values, Errors). `existing` is the current job list, used
@@ -179,8 +180,18 @@ def check_new_song(form, existing: list, transpose_choices) -> tuple:
     if source not in ("lyric_video", "instrumental"):
         source = "lyric_video"
 
-    link = check_link(form.get("source_ref"), "A link to the song", errors,
-                      "source_ref")
+    # A file and a link are alternatives. Uploading is the reliable route:
+    # YouTube refuses a lot of music to anything that isn't a browser, and the
+    # team generally already has the file they were going to play anyway.
+    raw_link = (form.get("source_ref") or "").strip()
+    if uploaded_name:
+        link = f"upload:{uploaded_name}"
+    elif raw_link:
+        link = check_link(raw_link, "A link to the song", errors, "source_ref")
+    else:
+        link = ""
+        errors.add("source_ref",
+                   "Either paste a link or choose a video file to upload.")
 
     original = ""
     if source == "instrumental":
@@ -202,7 +213,7 @@ def check_new_song(form, existing: list, transpose_choices) -> tuple:
     if transpose not in transpose_choices:
         transpose = 0
 
-    if link and not errors.get("source_ref"):
+    if link and not link.startswith("upload:") and not errors.get("source_ref"):
         key = normalise_link(link)
         for job in existing:
             if job.get("stage") not in ACTIVE_STAGES:

@@ -11,7 +11,7 @@
 </div>
 {% endif %}
 
-<form method="post" action="{{ url_for('create_job') }}">
+<form method="post" action="{{ url_for('create_job') }}" enctype="multipart/form-data">
 <div class="card">
 
   <label for="title">Song name</label>
@@ -53,8 +53,18 @@
     </label>
   </div>
 
-  <label for="source_ref">Link to the track</label>
-  <input type="url" id="source_ref" name="source_ref" required
+  <label for="source_file">Upload the video <span class="muted">(most reliable)</span></label>
+  <input type="file" id="source_file" name="source_file"
+         accept="video/*,audio/*"
+         style="padding:.5rem;background:#fff;border:1px solid #CBD4DD;border-radius:10px;width:100%">
+  <div class="hint">
+    If you already downloaded the video, choose it here. This always works.
+    YouTube blocks a lot of worship music from being downloaded automatically,
+    so a link can fail where the file will not.
+  </div>
+
+  <label for="source_ref" style="margin-top:1.1rem">…or paste a link instead</label>
+  <input type="url" id="source_ref" name="source_ref"
          class="{{ 'bad' if errors.get('source_ref') }}"
          placeholder="https://www.youtube.com/watch?v=..."
          value="{{ values.get('source_ref', '') }}">

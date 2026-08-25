@@ -44,12 +44,15 @@ from dashboard.validate import (check_lyrics, check_new_song,  # noqa: E402
 # to one place and then 404s looking for them in another.
 DATA_DIR = Path(os.environ.get("HOPEWELL_DATA", ROOT / "work" / "dashboard")).resolve()
 MEDIA_DIR = DATA_DIR / "media"
+#: Videos the team uploads instead of pasting a link.
+SOURCE_DIR = DATA_DIR / "sources"
 DB_PATH = DATA_DIR / "jobs.db"
 #: How long finished videos stay downloadable here before being pruned.
 RETENTION_DAYS = int(os.environ.get("HOPEWELL_RETENTION_DAYS", "45"))
 MAX_UPLOAD_MB = int(os.environ.get("HOPEWELL_MAX_UPLOAD_MB", "600"))
 
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+SOURCE_DIR.mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
@@ -267,10 +270,22 @@ def new_job_form():
                            errors=Errors(), values={})
 
 
+def _save_upload(job_id: str, upload) -> str:
+    """Store an uploaded source video. Returns the stored filename."""
+    safe = "".join(c for c in Path(upload.filename).name
+                   if c.isalnum() or c in " .-_()").strip()
+    name = f"{job_id}-{safe or 'source.mp4'}"
+    upload.save(SOURCE_DIR / name)
+    return name
+
+
 @app.post("/new")
 def create_job():
+    upload = request.files.get("source_file")
+    has_file = bool(upload and upload.filename)
     values, errors = check_new_song(request.form, store.list(limit=200),
-                                    TRANSPOSE_CHOICES)
+                                    TRANSPOSE_CHOICES,
+                                    uploaded_name="pending" if has_file else "")
     if errors:
         # Everything typed is handed straight back, so nobody has to retype a
         # link on a phone because one field was wrong.
@@ -279,6 +294,11 @@ def create_job():
                                errors=errors, values=values), 400
 
     job_id = store.create(requested_by=current_user(), stage="queued", **values)
+    if has_file:
+        # Named after the job, so the file can only be reached once the job it
+        # belongs to exists.
+        stored = _save_upload(job_id, upload)
+        store.update(job_id, source_ref=f"upload:{stored}")
     return redirect(url_for("job_detail", job_id=job_id))
 
 
@@ -461,6 +481,22 @@ def api_upload_audio(job_id: str):
     dest = MEDIA_DIR / audio_name(job_id)
     upload.save(dest)
     return jsonify(ok=True, bytes=dest.stat().st_size)
+
+
+@app.get("/api/job/<job_id>/source")
+def api_source(job_id: str):
+    """Hand the worker the file that was uploaded for this job."""
+    require_worker()
+    job = store.get(job_id)
+    if not job:
+        abort(404)
+    ref = job.get("source_ref", "")
+    if not ref.startswith("upload:"):
+        abort(404, "this job has no uploaded file")
+    name = ref.split(":", 1)[1]
+    if not (SOURCE_DIR / name).is_file():
+        abort(404, "the uploaded file is no longer on the server")
+    return send_from_directory(SOURCE_DIR, name, as_attachment=True)
 
 
 @app.get("/api/themes")

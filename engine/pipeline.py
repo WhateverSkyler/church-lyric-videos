@@ -123,9 +123,26 @@ def cookie_file() -> Path | None:
 
 
 def fetch(ref: str, workdir: Path, audio_only: bool = False,
-          progress=None) -> Path:
-    """Resolve a URL or path to a local media file."""
+          progress=None, fetch_upload=None) -> Path:
+    """Resolve a URL, an uploaded file, or a local path to a media file.
+
+    `fetch_upload` is supplied by the worker and knows how to pull a file the
+    team uploaded to the dashboard. Uploading is the dependable route: YouTube
+    refuses a great deal of music to anything that is not a browser, and the
+    team usually already has the file they were going to play.
+    """
     workdir.mkdir(parents=True, exist_ok=True)
+
+    if ref.startswith("upload:"):
+        if fetch_upload is None:
+            raise RuntimeError(
+                "This song was uploaded as a file, but there is no way to "
+                "collect it from here. Run it from the worker."
+            )
+        if progress:
+            progress("fetch", 0, 1)
+        return fetch_upload(ref.split(":", 1)[1], workdir)
+
     if not is_url(ref):
         path = Path(ref).expanduser()
         if not path.is_file():
@@ -244,7 +261,8 @@ def extract_audio(media: Path, out: Path) -> Path:
 # --------------------------------------------------------------------------
 
 
-def prepare(job: Job, workdir: Path, progress=None) -> Job:
+def prepare(job: Job, workdir: Path, progress=None,
+            fetch_upload=None) -> Job:
     """Fetch the media and recover timed lyrics. Leaves the job in REVIEW."""
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -253,7 +271,8 @@ def prepare(job: Job, workdir: Path, progress=None) -> Job:
 
     try:
         if job.source == Source.LYRIC_VIDEO:
-            media = fetch(job.source_ref, workdir, audio_only=False, progress=progress)
+            media = fetch(job.source_ref, workdir, audio_only=False, progress=progress,
+                          fetch_upload=fetch_upload)
             audio = extract_audio(media, workdir / "audio.m4a")
 
             job.stage = Stage.EXTRACTING
@@ -263,7 +282,8 @@ def prepare(job: Job, workdir: Path, progress=None) -> Job:
             track.title = job.title or track.title
 
         elif job.source == Source.INSTRUMENTAL:
-            audio = fetch(job.source_ref, workdir, audio_only=True, progress=progress)
+            audio = fetch(job.source_ref, workdir, audio_only=True, progress=progress,
+                          fetch_upload=fetch_upload)
             if not job.original_ref:
                 raise ValueError(
                     "Phase 2 needs the original recording as well, to borrow "
@@ -282,7 +302,8 @@ def prepare(job: Job, workdir: Path, progress=None) -> Job:
                 job.notes = result.note
 
         elif job.source == Source.TIMED_LYRICS:
-            audio = fetch(job.source_ref, workdir, audio_only=True, progress=progress)
+            audio = fetch(job.source_ref, workdir, audio_only=True, progress=progress,
+                          fetch_upload=fetch_upload)
             if not job.lyrics_path:
                 raise ValueError("TIMED_LYRICS needs lyrics_path set.")
             track = LyricTrack.load(Path(job.lyrics_path))

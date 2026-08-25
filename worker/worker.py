@@ -85,6 +85,17 @@ class Dashboard:
             # only goes stale after 45 minutes of total silence.
             pass
 
+    def download_source(self, job_id: str, name: str, workdir: Path) -> Path:
+        """Pull the video the team uploaded for this job."""
+        dest = workdir / name
+        req = urllib.request.Request(
+            f"{self.base}/api/job/{job_id}/source",
+            headers={"Authorization": f"Bearer {self.token}",
+                     "User-Agent": "hopewell-worker/1.0"})
+        with urllib.request.urlopen(req, timeout=1800) as resp, dest.open("wb") as fh:
+            shutil.copyfileobj(resp, fh, length=1 << 20)
+        return dest
+
     def upload(self, job_id: str, path: Path, kind: str = "upload"):
         """Multipart upload, hand-rolled to avoid a requests dependency.
 
@@ -234,7 +245,9 @@ class Worker:
     # -- half one ------------------------------------------------------
 
     def _do_prepare(self, job: Job, workdir: Path) -> None:
-        job = prepare(job, workdir, self._progress(job.id))
+        job = prepare(job, workdir, self._progress(job.id),
+                      fetch_upload=lambda name, wd: self.api.download_source(
+                          job.id, name, wd))
         if job.stage == Stage.FAILED:
             log(f"  prepare failed: {job.error}")
             self.api.update(job.id, stage="failed", error=job.error)
