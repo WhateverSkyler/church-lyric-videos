@@ -142,11 +142,15 @@ def fetch(ref: str, workdir: Path, audio_only: bool = False,
     if runtime:
         cmd += ["--js-runtimes", f"deno:{runtime}"]
 
-    # YouTube refuses the media stream outright from some networks even when
-    # extraction succeeds - the symptom is a bare 403 AFTER metadata comes back
-    # fine. A cookies file exported from a signed-in browser is what settles
-    # it. --cookies-from-browser is not an option here: the worker runs as a
-    # SYSTEM scheduled task, which has no browser profile of its own.
+    # Optional, and deliberately never the first suggestion. A signed-in
+    # session does defeat some 403s, but a 403 on one video while others
+    # download fine is a restriction on that upload, not an auth problem -
+    # and the obvious cookies to reach for on the render machine belong to
+    # the church's own Google account, which owns the channel the Sunday
+    # service is streamed to. Replaying those from an unattended SYSTEM
+    # service to get around a licensing restriction risks the broadcast
+    # channel to save one download. Use a separate throwaway profile if this
+    # is ever needed at all; the right first move is another upload.
     cookies = cookie_file()
     if cookies:
         cmd += ["--cookies", str(cookies)]
@@ -202,9 +206,10 @@ _DOWNLOAD_HINTS = (
      "That's a live stream rather than a finished video. Wait until it's "
      "posted properly, or use another upload."),
     ("HTTP Error 403",
-     "YouTube refused to send the video to the church computer. This is "
-     "usually fixed by giving it a cookies file: sign in to YouTube in Chrome "
-     "on that machine, export cookies.txt, and save it in the project folder."),
+     "YouTube refused to send this particular video. Other videos download "
+     "fine, so it is this upload rather than a problem with the setup - "
+     "usually a licensing or Content-ID restriction on a commercially "
+     "released track. Find another upload of the same song."),
     ("HTTP Error 429",
      "YouTube is rate-limiting the church computer. Wait an hour and retry."),
     ("Requested format is not available",
