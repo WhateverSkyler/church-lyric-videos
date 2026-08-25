@@ -28,3 +28,7 @@ assets/footage/prepared/
 samples/ref/
 work/
 dashboard/themes.json
+
+# yt-dlp cookies (optional, machine-specific)
+cookies.txt
+worker/cookies.txt

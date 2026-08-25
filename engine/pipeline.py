@@ -103,6 +103,25 @@ def is_url(ref: str) -> bool:
     return ref.startswith(("http://", "https://", "www."))
 
 
+def cookie_file() -> Path | None:
+    """A Netscape-format cookies file for yt-dlp, if one has been provided.
+
+    Set HOPEWELL_COOKIES, or drop the file at the project root as
+    cookies.txt. Kept optional: most videos need no cookies at all, and the
+    file goes stale, so it must never be required for a download to work.
+    """
+    import os
+
+    explicit = os.environ.get("HOPEWELL_COOKIES", "").strip().strip('"')
+    if explicit and Path(explicit).is_file():
+        return Path(explicit)
+    for candidate in (Path(__file__).resolve().parent.parent / "cookies.txt",
+                      Path(__file__).resolve().parent.parent / "worker" / "cookies.txt"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def fetch(ref: str, workdir: Path, audio_only: bool = False,
           progress=None) -> Path:
     """Resolve a URL or path to a local media file."""
@@ -122,6 +141,19 @@ def fetch(ref: str, workdir: Path, audio_only: bool = False,
     runtime = tools.deno()
     if runtime:
         cmd += ["--js-runtimes", f"deno:{runtime}"]
+
+    # YouTube refuses the media stream outright from some networks even when
+    # extraction succeeds - the symptom is a bare 403 AFTER metadata comes back
+    # fine. A cookies file exported from a signed-in browser is what settles
+    # it. --cookies-from-browser is not an option here: the worker runs as a
+    # SYSTEM scheduled task, which has no browser profile of its own.
+    cookies = cookie_file()
+    if cookies:
+        cmd += ["--cookies", str(cookies)]
+
+    # Ask for the clients least likely to be refused before falling back to
+    # the default set.
+    cmd += ["--extractor-args", "youtube:player_client=default,tv,web_safari"]
 
     cmd += ["-o", template, "--print", "after_move:filepath"]
     if audio_only:
@@ -169,6 +201,10 @@ _DOWNLOAD_HINTS = (
     ("This live event",
      "That's a live stream rather than a finished video. Wait until it's "
      "posted properly, or use another upload."),
+    ("HTTP Error 403",
+     "YouTube refused to send the video to the church computer. This is "
+     "usually fixed by giving it a cookies file: sign in to YouTube in Chrome "
+     "on that machine, export cookies.txt, and save it in the project folder."),
     ("HTTP Error 429",
      "YouTube is rate-limiting the church computer. Wait an hour and retry."),
     ("Requested format is not available",
