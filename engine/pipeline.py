@@ -114,7 +114,16 @@ def fetch(ref: str, workdir: Path, audio_only: bool = False,
         return path
 
     template = str(workdir / "%(id)s.%(ext)s")
-    cmd = [tools.yt_dlp(), "--no-playlist", "-o", template, "--print", "after_move:filepath"]
+    cmd = [tools.yt_dlp(), "--no-playlist"]
+
+    # YouTube extraction needs a JavaScript runtime, and yt-dlp only looks for
+    # one on PATH. The worker runs as a SYSTEM scheduled task with no user
+    # PATH, so the location is passed explicitly or every download 403s.
+    runtime = tools.deno()
+    if runtime:
+        cmd += ["--js-runtimes", f"deno:{runtime}"]
+
+    cmd += ["-o", template, "--print", "after_move:filepath"]
     if audio_only:
         cmd += ["-f", "bestaudio/best", "-x", "--audio-format", "m4a"]
     else:

@@ -44,6 +44,12 @@ _SPEC = {
         "tools/yt-dlp.exe", "tools/yt-dlp",
         "/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp",
     )),
+    "deno": ("HOPEWELL_DENO", (
+        "tools/deno.exe",
+        "C:/Program Files/deno/deno.exe",
+        "~/.deno/bin/deno.exe", "~/.deno/bin/deno",
+        "/opt/homebrew/bin/deno", "/usr/local/bin/deno",
+    )),
     "tesseract": ("HOPEWELL_TESSERACT", (
         "tools/tesseract.exe",
         "C:/Program Files/Tesseract-OCR/tesseract.exe",
@@ -98,7 +104,7 @@ def find(name: str) -> str | None:
 
     for extra in extras:
         candidate = Path(extra)
-        if not candidate.is_absolute():
+        if not candidate.is_absolute() and not extra.startswith("~"):
             # Relative entries are searched beside the project AND beside the
             # worker's own folder, which is where the church PC keeps its copy.
             for base in (ROOT, ROOT.parent, Path.cwd()):
@@ -106,9 +112,11 @@ def find(name: str) -> str | None:
                 if probe.is_file():
                     _cache[name] = str(probe.resolve())
                     return _cache[name]
-        elif candidate.is_file():
-            _cache[name] = str(candidate)
-            return _cache[name]
+        else:
+            candidate = candidate.expanduser()
+            if candidate.is_file():
+                _cache[name] = str(candidate)
+                return _cache[name]
 
     _cache[name] = None
     return None
@@ -149,6 +157,16 @@ def yt_dlp() -> str:
 def tesseract() -> str | None:
     """Optional: the fallback OCR engine. None when it isn't installed."""
     return find("tesseract")
+
+
+def deno() -> str | None:
+    """Optional: the JavaScript runtime yt-dlp needs for YouTube.
+
+    yt-dlp finds this on PATH, which the worker does not have - it runs as a
+    SYSTEM scheduled task, and Deno installs itself onto the *user* PATH. So
+    the path is resolved here and handed to yt-dlp explicitly.
+    """
+    return find("deno")
 
 
 def report() -> dict:
