@@ -302,9 +302,13 @@ class BrandMark:
 
         self.title_card = self._text_card(splash.title_text(title), size=0.62,
                                           y=0.655) if self.plan.has_intro else None
-        self.tagline_card = self._text_card(splash.closing_text(), size=0.46,
+        # closing_text() is empty by design - the mark carries the tagline.
+        # Kept wired up so a theme can put words under the closing mark again
+        # without re-threading any of this.
+        closing = splash.closing_text()
+        self.tagline_card = self._text_card(closing, size=0.46,
                                             y=0.655, italic=True) \
-            if self.plan.has_outro else None
+            if (closing.strip() and self.plan.has_outro) else None
 
     # -- geometry -------------------------------------------------------
 

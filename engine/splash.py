@@ -185,4 +185,11 @@ def title_text(song_title: str) -> str:
 
 
 def closing_text() -> str:
-    return TAGLINE
+    """Nothing. The closing card is the mark alone.
+
+    The tagline used to be set underneath it, which put "Living Life Together
+    in Christ" on screen twice: the mark already carries it, and on the navy
+    panel the two sat inches apart reading the same words. The mark says it
+    once, properly, in the church's own lettering.
+    """
+    return ""
