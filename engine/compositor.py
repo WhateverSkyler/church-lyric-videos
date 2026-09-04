@@ -417,7 +417,7 @@ def render_animated(theme: Theme, lines: list, audio: Path, out: Path,
                     animation: TextAnimation | None = None,
                     frame: tuple = FRAME, fps: int = FPS,
                     encoder: str | None = None, title: str | None = None,
-                    clip_seed: int = 0, use_footage: bool = False,
+                    clip_seed: int = 0, use_footage: bool = True,
                     force_software: bool = False, progress=None) -> Result:
     """Render a fully animated lyric video.
 

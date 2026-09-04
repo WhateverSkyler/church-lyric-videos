@@ -138,6 +138,32 @@ def test_no_symbol_ever_reaches_the_screen():
         assert all(c.isalpha() or c in " '-" for c in ocr.repair_word(raw)), raw
 
 
+def test_c_for_g_misreads_are_repaired():
+    """The four that survived every other repair in a real render."""
+    assert ocr.repair_word("throuch") == "through"
+    assert ocr.repair_word("nichts") == "nights"
+    assert ocr.repair_word("cood") == "good"
+    assert ocr.repair_word("runninc") == "running"
+    assert ocr.repair_word("Runninc") == "Running"
+
+
+def test_a_correct_word_is_never_turned_into_another_correct_one():
+    """The substitution is accepted only when the word as read is NOT
+    vocabulary and the result IS, so every one of these is untouchable.
+    Without that ordering "cave" becomes "gave" and nobody notices."""
+    for word in ("cave", "cold", "come", "coat", "cross", "coal", "cot",
+                 "came", "cane", "crown", "clad", "core", "cage", "class",
+                 "crave", "grace", "good", "glue", "grab", "gross", "tough",
+                 "rage", "gut", "gap", "glean", "gore", "gull"):
+        assert ocr.repair_word(word) == word, word
+
+
+def test_an_unknown_word_is_left_alone():
+    """Absent from the lexicon means no opinion, not a guess."""
+    for word in ("Hopewell", "Moultrie", "Emmanuel"):
+        assert ocr.repair_word(word) == word, word
+
+
 def test_clean_applies_the_repairs():
     assert ocr.clean("F'VE BEEN HELD") == "I've been held"
 

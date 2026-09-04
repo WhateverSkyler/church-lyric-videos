@@ -558,6 +558,55 @@ _I_GLUED_FOLLOWERS = {
 #: An "I" glued to the front of a lowercase word: "Ilove" -> "I love".
 _I_GLUED = re.compile(r"^I([A-Za-z]{2,})$")
 
+#: Letters this engine genuinely confuses for one another on lyric type. c/g
+#: is the one seen in the wild: "throuch", "nichts", "cood", "runninc".
+_LETTER_CONFUSIONS = (("c", "g"), ("g", "c"))
+
+
+def _lyric_words() -> frozenset:
+    """Common English and worship vocabulary, loaded once.
+
+    Deliberately a curated list rather than a system dictionary. A full
+    dictionary is worse here, not better: web2 contains "throuch" as an
+    archaic spelling, so the very word that needed repairing would have
+    counted as correct. Anything absent from this list is simply left alone,
+    which is the safe way to be wrong.
+    """
+    global _WORDS
+    if _WORDS is None:
+        path = Path(__file__).resolve().parent / "data" / "lyric_words.txt"
+        _WORDS = frozenset(path.read_text(encoding="utf-8").split())
+    return _WORDS
+
+
+_WORDS = None
+
+
+def repair_letter_confusions(word: str) -> str:
+    """Fix a c-for-g misread, but only where it is provably a misread.
+
+    A substitution is accepted only when the word as read is NOT vocabulary
+    and the substituted form IS. That ordering is the whole safety argument:
+    "cave", "cold" and "come" are all in the list, so none of them can ever
+    be turned into "gave", "gold" or "gome". A word that is simply unknown is
+    left exactly as it was.
+    """
+    bare = word.strip(".,!?;:\"'()").lower()
+    if not bare or bare in _lyric_words():
+        return word
+    for wrong, right in _LETTER_CONFUSIONS:
+        if wrong not in bare:
+            continue
+        for i, ch in enumerate(bare):
+            if ch != wrong:
+                continue
+            candidate = bare[:i] + right + bare[i + 1:]
+            if candidate in _lyric_words():
+                at = word.lower().index(bare) + i
+                fixed = right.upper() if word[at].isupper() else right
+                return word[:at] + fixed + word[at + 1:]
+    return word
+
 #: Words that stay capitalised when a SHOUTED source line is normalised back
 #: to sentence case. Reverent capitalisation is the convention in printed
 #: worship lyrics, and getting it wrong is the kind of thing a congregation
@@ -633,10 +682,11 @@ def repair_word(word: str) -> str:
     glued = _I_GLUED.match(word)
     if glued and glued.group(1).lower() in _I_GLUED_FOLLOWERS:
         word = f"I {glued.group(1)}"
+    word = "".join(c for c in word if c in _SAFE_CHARS)
     # Whatever survived the named repairs and still is not a letter never
     # belonged to the song. Dropping it leaves a misspelling, which is the
     # kind of wrong a congregation reads past.
-    return "".join(c for c in word if c in _SAFE_CHARS)
+    return repair_letter_confusions(word)
 
 
 def clean(raw: str) -> str:
