@@ -71,6 +71,10 @@ def main() -> int:
             continue
 
         print(f"[{mood}] need {need} more")
+        # Clips already turned down never come back. Without this the same
+        # keyword returns the same top results and a re-fetch quietly
+        # re-catalogues everything a person just rejected.
+        blocked = footage.rejected_ids()
         # Gather a surplus of candidates: exposure is only knowable after
         # download, and a good fraction of stock results turn out unusable.
         candidates = []
@@ -82,6 +86,8 @@ def main() -> int:
                 continue
             for clip in results:
                 if clip.id in catalog or any(c.id == clip.id for c in candidates):
+                    continue
+                if int(clip.id) in blocked:
                     continue
                 candidates.append(clip)
 

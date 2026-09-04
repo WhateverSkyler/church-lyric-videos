@@ -405,6 +405,50 @@ def save_catalog(clips: dict) -> Path:
     return CATALOG
 
 
+#: Clips a person has looked at and turned down. Kept separately from the
+#: catalogue because removing an entry is not enough: the library is built by
+#: keyword search, the same search returns the same top results, and the next
+#: fetch pulled every rejected clip straight back in. A rejection has to
+#: outlive the thing it rejected.
+REJECTED_FILE = LIBRARY / "rejected.json"
+
+
+def rejected_ids() -> set:
+    """Pexels ids that must never be catalogued again."""
+    if not REJECTED_FILE.is_file():
+        return set()
+    try:
+        return {int(i) for i in json.loads(REJECTED_FILE.read_text())}
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return set()
+
+
+def reject(ids, catalog: dict | None = None) -> int:
+    """Turn clips down for good: off the catalogue, off the disk, on the list.
+
+    Deleting the files matters as much as the flag. An unapproved clip is
+    already invisible to for_mood(), but a file left on disk is a file
+    somebody can re-approve by accident, and the whole point of this list is
+    that a person said no once and does not have to say it again.
+    """
+    ids = {int(i) for i in ids}
+    REJECTED_FILE.parent.mkdir(parents=True, exist_ok=True)
+    REJECTED_FILE.write_text(
+        json.dumps(sorted(rejected_ids() | ids), indent=2) + "\n")
+
+    catalog = load_catalog() if catalog is None else catalog
+    dropped = 0
+    for key in [k for k, c in catalog.items() if int(c.id) in ids]:
+        clip = catalog[key]
+        for path in (clip.prepared_path, clip.raw_path):
+            if path and Path(path).is_file():
+                Path(path).unlink()
+        del catalog[key]
+        dropped += 1
+    save_catalog(catalog)
+    return dropped
+
+
 def for_mood(mood: str, catalog: dict | None = None) -> list:
     """Approved, prepared clips catalogued under `mood`.
 
