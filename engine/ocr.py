@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import string
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -513,7 +514,24 @@ _I_CONFUSIONS = ("|", "!", "¡", "1")
 #: that was read correctly passes through these untouched.
 _GLYPH_REPAIRS = (
     ("€", "G"),          # "goodness of €od"
+    ("£", "E"),
+    ("$", "S"),
+    ("§", "S"),
+    ("©", "C"),
+    ("®", "R"),
+    ("¥", "Y"),
+    ("¤", "O"),
 )
+
+#: Everything that may legitimately appear in a lyric line. A character
+#: outside this set is a recognition artifact, never a word.
+#:
+#: The repairs above name the substitutions actually seen, but they can only
+#: ever cover what has already gone wrong once. This set is the guarantee
+#: underneath them: whatever the engine invents next, a symbol does not reach
+#: a sanctuary screen. A misread word is a misread word - a euro sign in the
+#: middle of "God" is a different kind of wrong, and the one nobody forgives.
+_SAFE_CHARS = frozenset(string.ascii_letters + " '\u2019-,.!?;:()\"")
 
 #: A double quote between two letters is a mangled apostrophe: I"ve -> I've.
 _MANGLED_APOSTROPHE = re.compile(r'(?<=[A-Za-z])"(?=[A-Za-z])')
@@ -615,7 +633,10 @@ def repair_word(word: str) -> str:
     glued = _I_GLUED.match(word)
     if glued and glued.group(1).lower() in _I_GLUED_FOLLOWERS:
         word = f"I {glued.group(1)}"
-    return word
+    # Whatever survived the named repairs and still is not a letter never
+    # belonged to the song. Dropping it leaves a misspelling, which is the
+    # kind of wrong a congregation reads past.
+    return "".join(c for c in word if c in _SAFE_CHARS)
 
 
 def clean(raw: str) -> str:

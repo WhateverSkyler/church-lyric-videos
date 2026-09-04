@@ -130,6 +130,14 @@ def test_repairs_cannot_damage_a_correctly_read_word():
         assert ocr.repair_word(word) == word, word
 
 
+def test_no_symbol_ever_reaches_the_screen():
+    """The named repairs only cover what has already gone wrong once. This is
+    the guarantee underneath them: a misread word is forgivable, a euro sign
+    in the middle of "God" is not."""
+    for raw in ("\u00b6od", "G\u2726d", "wor\u00a7hip", "gr@ce", "l\u00f8ve"):
+        assert all(c.isalpha() or c in " '-" for c in ocr.repair_word(raw)), raw
+
+
 def test_clean_applies_the_repairs():
     assert ocr.clean("F'VE BEEN HELD") == "I've been held"
 

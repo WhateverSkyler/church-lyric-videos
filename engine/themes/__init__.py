@@ -291,8 +291,10 @@ MORNING_LIGHT = Theme(
     ),
     build_base=_morning_base,
     motion=Motion(zoom_from=1.0, zoom_to=1.06),
-    logo=LogoMark(anchor="br", width=0.185, opacity=1.0, halo=14,
-                  halo_color="#FFFFFF", halo_strength=2.2),
+    # A dark halo, like every other theme. This one carried a white one, and
+    # the mark's wordmark is itself white — white glow behind white type on a
+    # cream plate left the logo unreadable in the first real render.
+    logo=LogoMark(anchor="br", width=0.185, opacity=1.0, halo=14),
 )
 
 
