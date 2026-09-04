@@ -112,6 +112,28 @@ def test_clean_repairs_bar_for_capital_i():
     assert ocr.clean("| WILL SING") == "I will sing"
 
 
+def test_glyph_confusions_seen_in_a_real_render_are_repaired():
+    """Every one of these came off the church PC's own OCR of a real video."""
+    assert ocr.repair_word("F've") == "I've"
+    assert ocr.repair_word("\u20acod") == "God"
+    assert ocr.repair_word('I"ve') == "I've"
+    assert ocr.repair_word("/s") == "is"
+    assert ocr.repair_word("Ilove") == "I love"
+
+
+def test_repairs_cannot_damage_a_correctly_read_word():
+    """The rules key on characters that cannot legally sit where they were
+    found. Splitting a leading 'I' is the one that could go wrong, so it is
+    held to a short list: Israel and Isaiah are worship vocabulary."""
+    for word in ("Israel", "Isaiah", "Immanuel", "It", "In", "If", "Is",
+                 "I'm", "I've", "God", "good", "come", "coming", "grace"):
+        assert ocr.repair_word(word) == word, word
+
+
+def test_clean_applies_the_repairs():
+    assert ocr.clean("F'VE BEEN HELD") == "I've been held"
+
+
 def _fragment(x, y, w, h, text):
     """One detector hit: its box corners, the text, and a confidence."""
     return ([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], text, 0.99)

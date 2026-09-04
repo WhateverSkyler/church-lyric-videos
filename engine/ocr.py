@@ -19,6 +19,7 @@ matters most exactly where it's hardest, over a bright sky.
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -507,6 +508,38 @@ def make_backend(prefer: str = "auto"):
 #: Characters OCR routinely invents in place of a capital I or l.
 _I_CONFUSIONS = ("|", "!", "¡", "1")
 
+#: Characters this OCR puts where a letter belongs on lyric-video type. Each
+#: one is a character that cannot occur in that position in English, so a word
+#: that was read correctly passes through these untouched.
+_GLYPH_REPAIRS = (
+    ("€", "G"),          # "goodness of €od"
+)
+
+#: A double quote between two letters is a mangled apostrophe: I"ve -> I've.
+_MANGLED_APOSTROPHE = re.compile(r'(?<=[A-Za-z])"(?=[A-Za-z])')
+
+#: No English contraction begins with F. The letter OCR loses here is a
+#: capital I, which on this type it reads as F: F've -> I've.
+#: Case-insensitive because repairs run before a SHOUTED line is normalised,
+#: so the raw text may still read F'VE.
+_F_CONTRACTION = re.compile(r"^F(?='(?:ve|m|ll|d|re)$)", re.IGNORECASE)
+
+#: A leading slash standing in for a lowercase i: "/s" -> "is".
+_LEADING_SLASH = re.compile(r"^/(?=[A-Za-z])")
+
+#: Words common enough after the pronoun that an "I" glued to the next word
+#: can be split with confidence. Deliberately short: "Israel", "Isaiah" and
+#: "Immanuel" are all worship vocabulary, and splitting on any lowercase run
+#: would break every one of them.
+_I_GLUED_FOLLOWERS = {
+    "love", "will", "am", "have", "know", "need", "see", "sing", "give",
+    "praise", "worship", "lift", "come", "want", "believe", "trust", "call",
+    "feel", "surrender", "receive", "sought", "found", "run", "stand",
+}
+
+#: An "I" glued to the front of a lowercase word: "Ilove" -> "I love".
+_I_GLUED = re.compile(r"^I([A-Za-z]{2,})$")
+
 #: Words that stay capitalised when a SHOUTED source line is normalised back
 #: to sentence case. Reverent capitalisation is the convention in printed
 #: worship lyrics, and getting it wrong is the kind of thing a congregation
@@ -563,6 +596,28 @@ def normalise_case(text: str) -> str:
     return "\n".join(out_rows)
 
 
+def repair_word(word: str) -> str:
+    """Undo the character-level confusions this OCR makes on lyric type.
+
+    Every rule is keyed on a character that cannot legally sit where it was
+    found, so a word that was read correctly cannot be damaged by any of
+    them. That is the whole basis for doing this without a dictionary: the
+    engine also confuses g for c ("throuch", "runninc", "cood"), which looks
+    like the same class of fault but is not - c is a perfectly legal letter
+    in those positions, and repairing it needs a vocabulary to know that
+    "cood" is not a word while "come" is.
+    """
+    for wrong, right in _GLYPH_REPAIRS:
+        word = word.replace(wrong, right)
+    word = _MANGLED_APOSTROPHE.sub("'", word)
+    word = _F_CONTRACTION.sub("I", word)
+    word = _LEADING_SLASH.sub("i", word)
+    glued = _I_GLUED.match(word)
+    if glued and glued.group(1).lower() in _I_GLUED_FOLLOWERS:
+        word = f"I {glued.group(1)}"
+    return word
+
+
 def clean(raw: str) -> str:
     """Tidy one OCR result into something worth showing a human."""
     lines = []
@@ -575,7 +630,7 @@ def clean(raw: str) -> str:
         for word in row.split():
             if word in _I_CONFUSIONS:
                 word = "I"
-            words.append(word)
+            words.append(repair_word(word))
         row = " ".join(words)
         # Drop rows that are mostly punctuation — usually a stray logo edge.
         letters = sum(c.isalpha() for c in row)
