@@ -461,6 +461,13 @@ def for_mood(mood: str, catalog: dict | None = None) -> list:
             and c.prepared and c.prepared_path.is_file()]
 
 
+def approved(catalog: dict | None = None) -> list:
+    """Every approved clip that is actually on disk, whatever its mood."""
+    catalog = load_catalog() if catalog is None else catalog
+    return [c for c in catalog.values()
+            if c.approved and c.prepared and c.prepared_path.is_file()]
+
+
 def pick(mood: str, seed: int = 0, catalog: dict | None = None) -> Clip | None:
     """Deterministically choose one clip for a mood.
 
@@ -468,6 +475,14 @@ def pick(mood: str, seed: int = 0, catalog: dict | None = None) -> Clip | None:
     rather than surprising anyone on a Sunday morning.
     """
     options = sorted(for_mood(mood, catalog), key=lambda c: c.id)
+    if not options:
+        # No approved clip catalogued under this mood, so use any approved
+        # clip rather than dropping to the flat plate. Mood is a preference,
+        # not a requirement: the theme's scrim pulls whatever is behind the
+        # type toward its own ground anyway, so a clip from another bucket
+        # reads correctly - and a moving backdrop from the approved pool is
+        # what was actually asked for.
+        options = sorted(approved(catalog), key=lambda c: c.id)
     if not options:
         return None
     return options[seed % len(options)]
