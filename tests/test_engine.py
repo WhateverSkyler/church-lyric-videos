@@ -112,6 +112,94 @@ def test_clean_repairs_bar_for_capital_i():
     assert ocr.clean("| WILL SING") == "I will sing"
 
 
+def _fragment(x, y, w, h, text):
+    """One detector hit: its box corners, the text, and a confidence."""
+    return ([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], text, 0.99)
+
+
+def _read(found):
+    """Drive EasyOCRBackend.read with a stubbed detector.
+
+    The class loads easyocr in __init__, which is not installed on a dev
+    machine and is not what is under test here: the reassembly of detector
+    output into reading order is pure geometry.
+    """
+    backend = object.__new__(ocr.EasyOCRBackend)
+    backend._reader = type("R", (), {
+        "readtext": lambda self, img, detail=1, paragraph=False: found})()
+    return ocr.EasyOCRBackend.read(backend, np.zeros((8, 8), bool), Path("."))
+
+
+def test_words_are_ordered_left_to_right_not_by_detection_order():
+    """The fault that shipped: a line came out with its words shuffled.
+
+    Sorting boxes by vertical position alone leaves fragments joined in
+    whatever order the detector found them. The result still reads as
+    plausible English, which is exactly what makes it dangerous - it would
+    reach a screen looking like a real line.
+    """
+    shuffled = [
+        _fragment(700, 100, 120, 40, "God"),
+        _fragment(100, 100, 180, 40, "Goodness"),
+        _fragment(560, 100, 90, 40, "of"),
+        _fragment(300, 100, 230, 40, "all my"),
+    ]
+    assert _read(shuffled) == "Goodness all my of God"
+
+
+def test_rows_are_ordered_top_to_bottom_and_kept_apart():
+    out = _read([
+        _fragment(400, 300, 150, 40, "faithful"),
+        _fragment(100, 300, 250, 40, "All my life You have been"),
+        _fragment(300, 100, 120, 40, "God"),
+        _fragment(100, 100, 150, 40, "Goodness of"),
+    ])
+    assert out == "Goodness of God\nAll my life You have been faithful"
+
+
+def test_a_drifting_baseline_still_binds_into_one_row():
+    """Rows group by the median glyph height, so jitter must not split a line."""
+    out = _read([
+        _fragment(100, 100, 150, 40, "Your"),
+        _fragment(280, 108, 150, 40, "goodness"),
+        _fragment(460, 103, 120, 40, "is"),
+        _fragment(600, 112, 140, 40, "running"),
+    ])
+    assert out == "Your goodness is running"
+
+
+def test_empty_and_blank_detections_read_as_nothing():
+    assert _read([]) == ""
+    assert _read([_fragment(0, 0, 10, 10, "   ")]) == ""
+
+
+def test_title_cards_are_recognised():
+    """The other fault that shipped: the render opened on the uploader's
+    branding, mangled by OCR - the borrowed styling this program removes."""
+    for card in ("Goodness of God - Bethel Music (Lyrics)",
+                 "Official Lyric Video",
+                 "WorshipHouse Media Productions",
+                 "Instrumental with Lyrics HD",
+                 "SUBSCRIBE to our channel"):
+        assert ocr.looks_like_title_card(card), card
+
+
+def test_real_lyrics_are_not_mistaken_for_title_cards():
+    """The filter drops a card silently, so a false positive deletes a line
+    out of the song with nothing to show for it. Lines that genuinely open
+    worship songs must survive the first thirty seconds."""
+    for line in ("It's You, it's You",
+                 "I'm Yours",
+                 "Amazing grace how sweet the sound",
+                 "Great is Thy faithfulness",
+                 "This is the air I breathe",
+                 "I have decided to follow Jesus",
+                 "O come let us adore Him",
+                 "It is well with my soul",
+                 "I'm so glad I'm His child"):
+        assert not ocr.looks_like_title_card(line), line
+
+
 # --------------------------------------------------------------------------
 # typography
 # --------------------------------------------------------------------------
