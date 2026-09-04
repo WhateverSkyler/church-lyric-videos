@@ -22,9 +22,12 @@ samples/work/
 output/
 samples/_smoke*
 
-# Stock footage (regenerate with scripts/fetch_footage.py; catalog is tracked)
+# Stock footage. The raw downloads stay out - they are large and only ever
+# an input to preparation. The PREPARED clips are tracked on purpose: they
+# are what actually goes on screen, the church PC has no other way to get
+# them, and a background that silently falls back to a flat plate because a
+# file is missing is the kind of failure nobody notices until Sunday.
 assets/footage/raw/
-assets/footage/prepared/
 samples/ref/
 work/
 dashboard/themes.json
