@@ -53,6 +53,35 @@ class LogoMark:
     halo: float = 16.0
     halo_color: str = "#000000"
     halo_strength: float = 1.6
+    #: A solid rounded panel behind the mark. A blurred halo cannot rescue
+    #: the wordmark over footage: the type inside the mark is white and thin,
+    #: and against a moving backdrop it kept dropping out. A flat plate is
+    #: the only thing that holds it at every frame of every clip. "" disables.
+    plate_color: str = Palette.NAVY_DEEP
+    plate_opacity: float = 0.82
+    #: Padding around the mark, and corner radius, as fractions of its width.
+    plate_pad: float = 0.055
+    plate_radius: float = 0.045
+
+
+@dataclass(frozen=True)
+class Scrim:
+    """A flat wash laid over stock footage before the type goes on.
+
+    Two jobs at once. It settles the contrast under the lyrics, and it stops
+    the backdrop reading as *a video* - a clip anyone can follow is a clip
+    whose loop point they will notice, and a congregation watching the
+    background is a congregation not singing. What is wanted is motion you
+    can feel and not describe.
+
+    The colour is the theme's own ground rather than simply black: pushing a
+    bright theme toward its cream is the same idea as pushing a dark one
+    toward its ink, and it keeps the six looks distinct instead of collapsing
+    them into one grey.
+    """
+
+    color: str = "#0A0F14"
+    opacity: float = 0.55
 
 
 @dataclass(frozen=True)
@@ -73,6 +102,8 @@ class Theme:
     mood: str = ""
     #: How the type arrives, sits and leaves. See textanim.PRESETS.
     animation: TextAnimation = field(default_factory=lambda: ANIM["lift"])
+    #: Laid over stock footage before the type. See Scrim.
+    scrim: Scrim = field(default_factory=Scrim)
 
     def base_plate(self, frame: tuple):
         return bg.cached_plate(self.key, "base", frame,
@@ -295,6 +326,11 @@ MORNING_LIGHT = Theme(
     # the mark's wordmark is itself white — white glow behind white type on a
     # cream plate left the logo unreadable in the first real render.
     logo=LogoMark(anchor="br", width=0.185, opacity=1.0, halo=14),
+    # The only theme that sets its lyrics in navy rather than white, so its
+    # scrim goes the other way: a black wash would leave dark type on a dark
+    # backdrop. Pushed toward cream instead, the footage quietens exactly as
+    # much and the type still reads.
+    scrim=Scrim(color="#F4EADA", opacity=0.62),
 )
 
 

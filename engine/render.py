@@ -168,7 +168,20 @@ def logo_layer(theme: Theme, frame: tuple = FRAME) -> Image.Image:
          "r": frame[0] - target_w - margin_x}[horizontal]
     y = margin_y if vertical == "t" else frame[1] - target_h - margin_y
 
-    if spec.halo > 0:
+    if spec.plate_color:
+        # A solid panel, not a blur — see LogoMark.plate_color.
+        from PIL import ImageDraw
+
+        box = int(round(target_w * spec.plate_pad))
+        radius = max(2, int(round(target_w * spec.plate_radius)))
+        plate = Image.new("RGBA", frame, (0, 0, 0, 0))
+        ImageDraw.Draw(plate).rounded_rectangle(
+            [x - box, y - box, x + target_w + box - 1, y + target_h + box - 1],
+            radius=radius,
+            fill=hex_to_rgb(spec.plate_color)
+            + (int(round(255 * spec.plate_opacity)),))
+        layer.alpha_composite(plate)
+    elif spec.halo > 0:
         pad = int(spec.halo * 2.5)
         glow = Image.new("RGBA", (target_w + pad * 2, target_h + pad * 2), (0, 0, 0, 0))
         shape = Image.new("RGBA", mark.size, hex_to_rgb(spec.halo_color) + (0,))

@@ -32,6 +32,7 @@ import numpy as np
 from . import footage as footage_mod
 from . import tools
 from .anim import Transform
+from .brand import hex_to_rgb
 from .lyrics import LyricLine
 from . import splash
 from .render import FRAME, FPS, pick_encoder, probe_duration
@@ -167,9 +168,13 @@ class FootageSource:
 
     def __init__(self, path: Path, frame: tuple = FRAME, fps: int = FPS,
                  zoom_from: float = 1.0, zoom_to: float = 1.08,
-                 duration: float = 0.0):
+                 duration: float = 0.0, scrim=None):
         self.frame = frame
         self.bytes_per_frame = frame[0] * frame[1] * 3
+        # Held as float so the wash is one multiply-add per frame.
+        self.scrim_rgb = (np.array(hex_to_rgb(scrim.color), dtype=np.float32)
+                          if scrim is not None and scrim.opacity > 0 else None)
+        self.scrim_opacity = float(scrim.opacity) if scrim is not None else 0.0
 
         total = max(1, int(duration * fps))
         step = (zoom_to - zoom_from) / total
@@ -194,10 +199,18 @@ class FootageSource:
         if raw is None or len(raw) < self.bytes_per_frame:
             # Source ended early (shouldn't with -stream_loop -1, but a decode
             # hiccup shouldn't abort a Sunday render) — hold the last frame.
-            return self._last.copy()
+            return self._wash(self._last.copy())
         self._last = np.frombuffer(raw, dtype=np.uint8).reshape(
             (self.frame[1], self.frame[0], 3))
-        return self._last.copy()
+        return self._wash(self._last.copy())
+
+    def _wash(self, rgb: np.ndarray) -> np.ndarray:
+        """Lay the theme's scrim over the frame. See themes.Scrim."""
+        if self.scrim_rgb is None:
+            return rgb
+        k = self.scrim_opacity
+        out = rgb.astype(np.float32) * (1.0 - k) + self.scrim_rgb * k
+        return out.astype(np.uint8)
 
     def close(self) -> None:
         try:
@@ -344,7 +357,6 @@ class BrandMark:
 
         from PIL import Image, ImageFilter
 
-        from .brand import hex_to_rgb
 
         spec = self.theme.logo
         height = max(1, round(self.source.height * key / self.source.width))
@@ -356,8 +368,24 @@ class BrandMark:
             mark = flat
 
         pad = int(spec.halo * 2.5) if spec.halo > 0 else 0
+        box = int(round(key * spec.plate_pad)) if spec.plate_color else 0
+        pad = max(pad, box)
         canvas = Image.new("RGBA", (key + pad * 2, height + pad * 2), (0, 0, 0, 0))
-        if pad:
+        if spec.plate_color:
+            # A solid panel, not a blur: the wordmark inside the mark is thin
+            # white type, and over moving footage a halo let it drop out
+            # frame by frame. This is the only thing that holds at every one.
+            from PIL import ImageDraw
+
+            plate = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+            radius = max(2, int(round(key * spec.plate_radius)))
+            ImageDraw.Draw(plate).rounded_rectangle(
+                [pad - box, pad - box, pad + key + box - 1, pad + height + box - 1],
+                radius=radius,
+                fill=hex_to_rgb(spec.plate_color)
+                + (int(round(255 * spec.plate_opacity)),))
+            canvas.alpha_composite(plate)
+        elif pad:
             shape = Image.new("RGBA", mark.size, hex_to_rgb(spec.halo_color) + (0,))
             shape.putalpha(mark.getchannel("A"))
             glow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
@@ -442,7 +470,7 @@ def render_animated(theme: Theme, lines: list, audio: Path, out: Path,
         if clip is not None:
             source = FootageSource(clip.prepared_path, frame, fps,
                                    theme.motion.zoom_from, theme.motion.zoom_to,
-                                   duration)
+                                   duration, scrim=theme.scrim)
             background_desc = f"pexels:{clip.id} ({clip.author})"
     if source is None:
         source = PlateSource(theme, frame, fps, duration)
