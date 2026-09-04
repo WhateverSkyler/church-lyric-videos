@@ -44,9 +44,16 @@ song name, the video file, and the key — and the finished video appears
 without coming back.
 
 There is a real cost to that. OCR mis-reads a word occasionally, and with no
-review step a wrong word reaches the screen. The job page allows correcting
-the words and re-rendering afterwards, so a mistake is fixable rather than
-merely unnoticed.
+review step a wrong word reaches the screen. Three things carry that weight
+instead of a gate:
+
+- the misreads this engine actually makes are repaired — see "Reading the
+  words" below
+- **no symbol ever reaches a screen.** A misread word is forgivable; a euro
+  sign in the middle of "God" is not, and one shipped once
+- the finished video **plays on the job page**, so somebody can watch it
+  before Sunday without downloading eighty megabytes to a phone. The words are
+  editable there and the job re-renders
 
 ## The themes
 
@@ -65,11 +72,12 @@ mark somewhere.
 
 A look is chosen automatically, so consecutive weeks do not match.
 
-Backgrounds are **generated**, not stock video: each plate is built from the
-colours sampled off the church's logo and contains no external content. Stock
-footage support exists but is OFF by default and gated behind per-clip
-approval — a keyword search cannot be known in advance, and unreviewed video
-has no business behind worship lyrics. See "Backgrounds" below.
+Backgrounds are stock footage from a small library somebody has watched, laid
+under a scrim so the motion reads without anyone following it. Every clip is
+approved by hand before it can appear — a keyword search cannot be known in
+advance, and unreviewed video has no business behind worship lyrics. Each
+theme also carries a generated plate, used when no approved clip is
+available. See "Backgrounds" below.
 
 ## Command line
 
@@ -100,8 +108,9 @@ engine/
   anim.py         easing, transforms, sprite compositing
   splash.py       the branded open and close, and the logo's travel between
   background.py   procedural backdrops, for when no footage is available
-  footage.py      Pexels sourcing, exposure grading, seamless looping
+  footage.py      Pexels sourcing, grading, looping, approvals and rejections
   ocr.py          Phase 1 — lyrics and timing off a source video
+  data/           lyric_words.txt — vocabulary the c/g repair is checked against
   align.py        Phase 2 — demucs + Whisper + chroma DTW
   transpose.py    key changes that provably do not move the timing
   compositor.py   the per-frame renderer
@@ -113,7 +122,12 @@ dashboard/        Flask queue + web UI (runs on the VPS)
   validate.py     catches the mistakes people actually make, by name
 worker/           the polling render worker (runs on the church PC)
   guard.py        keeps rendering away from the livestream
-deploy/           deployment scripts
+assets/footage/
+  prepared/       the clips that actually go on screen (tracked, not ignored)
+  catalog.json    every clip, its mood, and whether a person approved it
+  rejected.json   clips turned down for good; no future fetch may re-add them
+deploy/           deployment scripts — the DASHBOARD runs a deployed copy,
+                  so a git push alone does not change the live site
 scripts/
   verify_timing.py  proves cues match the source, in milliseconds
 ```
@@ -144,6 +158,29 @@ echo "PEXELS_API_KEY=..." > .env
 .venv/bin/python scripts/fetch_footage.py
 ```
 
+## Reading the words
+
+OCR on lyric-video type fails in ways that are systematic rather than random,
+so they are repaired rather than reviewed. Everything here came off a real
+render of a real song:
+
+| fault | example | how it is fixed |
+|---|---|---|
+| words out of reading order | `Goodness God of` | fragments grouped into rows by median glyph height, then ordered left to right |
+| the uploader's title card read as a lyric | `Instrumental Cover with lyrics` | cards in the first 30s checked for branding words and for the unreadability OCR makes of logo type |
+| a letter replaced by a symbol | `goodness of €od` | named repairs, then a whitelist of characters a lyric may contain — anything else is dropped |
+| c read as g | `throuch`, `nichts`, `cood`, `runninc` | a substitution is accepted **only** when the word as read is not vocabulary and the result is |
+
+That last one needs vocabulary rather than a rule, because `c` is a legal
+letter in all four positions. The ordering is the whole safety argument:
+`cave`, `cold`, `class` and `come` are all in `engine/data/lyric_words.txt`,
+so none of them can become `gave`, `gold`, `glass` or `gome`. An unknown word
+is left alone.
+
+The list is curated rather than a system dictionary, deliberately: web2 carries
+`throuch` as an archaic spelling, so the very word needing repair would have
+counted as already correct.
+
 ## The `.lyr` format
 
 What the review step edits. Deliberately plain, so it can be fixed quickly:
@@ -160,16 +197,38 @@ whoever is proofreading controls where lines split without touching timings.
 
 ## Backgrounds
 
-Renders use the theme's own generated plate. Three separate locks keep stock
-video out unless somebody has actually looked at it:
+Renders use stock footage, but only footage a person has actually watched.
+Nothing reaches a screen on trust:
 
-- `use_footage` defaults to `False` in both the compositor and the pipeline
-- every catalogued clip carries `approved=False`, and `for_mood()` will not
-  return an unapproved clip
-- `scripts/fetch_footage.py` downloads candidates **for review only**
+- `scripts/fetch_footage.py` downloads candidates **for review only**, and
+  catalogues every one with `approved=False`
+- `for_mood()` will not return an unapproved clip, so a fetch cannot put
+  anything on screen by itself
+- a clip turned down is recorded in `assets/footage/rejected.json`, deleted
+  from disk, and skipped by every future fetch. The library is built by
+  keyword search and the same keyword returns the same results, so without
+  this a re-fetch quietly re-catalogues what was just rejected — being asked
+  twice about the same clip is how people stop answering
 
-To use footage: fetch candidates, look at every one, mark the acceptable ones
-approved, then pass `use_footage=True`.
+Clips are catalogued under a mood, and a theme prefers its own mood's clips.
+Mood is a preference rather than a requirement: when a mood has none, any
+approved clip is used instead. A moving backdrop from the reviewed pool beats
+a flat colour, and the scrim makes the difference invisible anyway.
+
+**The scrim** is a flat wash laid over the footage before the type goes on.
+It settles the contrast under the lyrics and stops the backdrop reading as a
+video — a clip anyone can follow is a clip whose loop point they will notice,
+and a congregation watching the background is a congregation not singing.
+
+Its colour is the theme's own ground, not simply black. `morning-light` sets
+its lyrics in navy, so a black wash would leave dark type on a dark backdrop;
+it is pushed toward cream instead and quietens exactly as much. Five themes go
+dark, that one goes light, and the six looks stay distinct.
+
+The prepared clips are tracked in git rather than ignored. The render machine
+has no other way to get them, and `for_mood()` skipping a clip whose file is
+missing means a silent fall back to a flat plate — no error, no log line, on a
+machine nobody is watching.
 
 ## Getting the source video
 

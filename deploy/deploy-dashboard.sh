@@ -114,22 +114,29 @@ cat <<NEXT
 
 Still to do by hand, once:
 
-  1. Point nginx at the app and put the shared password in front of it.
-     In the CloudPanel vhost for ${DOMAIN}, proxy to 127.0.0.1:${PORT} and add:
+  1. Point nginx at the app. In the CloudPanel vhost for ${DOMAIN}, proxy to
+     127.0.0.1:${PORT} and add:
 
-        auth_basic           "Hopewell";
-        auth_basic_user_file /etc/nginx/.htpasswd_hopewell;
-        client_max_body_size 700m;          # finished videos are large
-        proxy_read_timeout   1800s;
+        client_max_body_size 700m;          # sources and finished videos are large
+        proxy_read_timeout   1800s;         # a render can hold a request open
 
-        location /api/ {                     # the worker uses a bearer token,
-            auth_basic off;                  # not the shared page password
-            proxy_pass http://127.0.0.1:${PORT};
-        }
+     No auth_basic. The app has its own sign-in page covering every route
+     except /healthz, /login and /api/* — the worker authenticates there with
+     a bearer token instead, so the password the team knows can never drive
+     the render machine.
 
-  2. Create the shared password:
+  2. Set the shared password. It defaults to the value hardcoded in
+     dashboard/app.py, which is in the public repo, so leaving it is a
+     decision rather than an oversight:
 
-        ssh ${SSH_HOST} "htpasswd -Bc /etc/nginx/.htpasswd_hopewell hopewell"
+        ssh ${SSH_HOST} "sudo -u ${SITE_USER} ${APP_DIR}/venv/bin/python -c \
+          \"from werkzeug.security import generate_password_hash as h; import pathlib; \
+            p=pathlib.Path('/home/${SITE_USER}/hopewell-data/password.hash'); \
+            p.write_text(h('CHANGE-ME')); p.chmod(0o600)\""
+
+     Run it AS ${SITE_USER}. ssh logs in as root here, and a root-owned 0600
+     hash is one the app cannot read — that locks out everybody, including
+     you. No restart needed; the hash is re-read on every sign-in.
 
   3. Save that password AND the worker token above into 1Password.
 
