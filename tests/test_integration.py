@@ -240,6 +240,24 @@ def main() -> int:
             check("rendered at 1080p",
                   any(s.get("height") == 1080 for s in streams))
 
+            # The job page plays the video inline. That must serve as video,
+            # not as a download, and must honour a range request - without
+            # ranges the browser pulls the whole file before it plays a
+            # second of it, which on a phone means nobody previews anything.
+            req = urllib.request.Request(f"{base}/job/{job_id}/watch",
+                                         headers={"Range": "bytes=0-2047"})
+            with opener.open(req, timeout=30) as r:
+                head = r.read()
+                ctype = r.headers.get("Content-Type", "")
+                disposition = r.headers.get("Content-Disposition", "")
+                status = r.status
+            check("the finished video streams inline for the player",
+                  ctype.startswith("video/") and "attachment" not in disposition,
+                  f"{status} {ctype} {disposition}")
+            check("seeking works (range request honoured)",
+                  status == 206 and len(head) == 2048,
+                  f"status {status}, {len(head)} bytes")
+
         check("a copy was kept on the local machine",
               any(sunday.glob("*.mp4")))
 

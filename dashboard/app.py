@@ -376,6 +376,23 @@ def download(job_id: str):
     return send_from_directory(MEDIA_DIR, job["output_name"], as_attachment=True)
 
 
+@app.get("/job/<job_id>/watch")
+def watch(job_id: str):
+    """The finished video, inline, for the player on the job page.
+
+    Separate from /download because that one forces a save. Checking the
+    words came out right should not mean pulling forty megabytes onto a
+    phone first — which, on a volunteer's data plan, means nobody checks.
+    conditional=True keeps range requests working, so seeking works and the
+    browser only fetches what it plays.
+    """
+    job = store.get(job_id)
+    if not job or not job["output_name"]:
+        abort(404)
+    return send_from_directory(MEDIA_DIR, job["output_name"],
+                               mimetype="video/mp4", conditional=True)
+
+
 def audio_name(job_id: str) -> str:
     return f"{job_id}-audio.m4a"
 

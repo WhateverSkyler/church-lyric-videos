@@ -51,6 +51,14 @@
       </div>
       <a class="btn go" href="{{ url_for('download', job_id=job.id) }}">Download</a>
     </div>
+    <!-- Watch it here first. preload="metadata" so opening the page does not
+         pull the whole file down a phone connection. -->
+    <video controls playsinline preload="metadata"
+           style="width:100%;margin-top:.9rem;border-radius:10px;background:#000"
+           src="{{ url_for('watch', job_id=job.id) }}">
+      Your browser can't play video here — use Download instead.
+    </video>
+    <p class="hint">Have a quick watch before Sunday, in case a word came out wrong.</p>
     <p class="hint">
       It's also saved on the church computer, so you don't have to download it here
       unless you want it somewhere else.
